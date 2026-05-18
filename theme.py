@@ -231,36 +231,77 @@ footer {{ display:none !important; }}
 
 /* === Responsive: mobile < 640 px ======================================= */
 @media (max-width: 640px) {{
+  /* Stack body so sidebar (now a tab strip) sits above content */
   .ams-body {{
     flex-direction:column !important;
+    gap:8px !important;
   }}
+
+  /* Sidebar = horizontal scroll strip. Strip its desktop chrome
+     (border, large padding, fixed width) so it reads as a tab bar. */
   .ams-sidebar {{
     min-width:100% !important;
     max-width:100% !important;
-    padding:6px !important;
+    padding:2px !important;
+    border:none !important;
+    background:transparent !important;
+    border-radius:0 !important;
   }}
-  /* Mobile: switch sidebar to horizontal scroll strip */
+
+  /* The radio's outer block (gr.Radio with container=False still gets
+     padding from Gradio's base styles). Flatten it. */
+  .ams-side-radio {{
+    padding:0 !important;
+    background:transparent !important;
+  }}
+
+  /* Real options live in the second .wrap (Gradio renders an extra
+     hidden one first); both flex-row + overflow + nowrap.
+     CRITICAL: override the desktop label width:100% — that's what
+     makes labels stack vertically inside a flex-row container. */
   .ams-side-radio .wrap {{
     flex-direction:row !important;
     overflow-x:auto !important;
+    overflow-y:hidden !important;
     gap:4px !important;
+    padding-bottom:2px !important;
+    /* Hide scrollbar but keep scrolling */
+    scrollbar-width:none !important;
   }}
+  .ams-side-radio .wrap::-webkit-scrollbar {{
+    display:none !important;
+  }}
+
   .ams-side-radio label {{
+    /* Compact pill: just enough room for emoji + label, no flex-grow */
+    width:auto !important;
+    min-width:0 !important;
+    max-width:max-content !important;
+    flex:0 0 auto !important;
     font-size:11px !important;
     white-space:nowrap !important;
+    padding:7px 11px !important;
+    /* Bottom border instead of left border for the horizontal context */
     border-left:none !important;
     border-bottom:2px solid transparent !important;
-    padding:8px 10px !important;
-    justify-content:flex-start !important;
+    border-radius:4px !important;
+    justify-content:center !important;
   }}
-  .ams-side-radio label::first-letter {{
-    font-size:13px !important;
-  }}
+  .ams-side-radio label.selected,
   .ams-side-radio label:has(input[type="radio"]:checked) {{
     border-left-color:transparent !important;
     border-bottom-color:{PRIMARY} !important;
+    background:{HOVER_BG} !important;
   }}
+
+  /* History block off-screen on mobile (already display:none on tablet+;
+     restate here in case the cascade gets weird) */
   .ams-history {{ display:none !important; }}
-  .ams-cta {{ font-size:11px; }}
+
+  /* Tighter chrome */
+  .ams-header {{ padding:6px 2px 2px 2px !important; }}
+  .ams-brand {{ font-size:15px !important; }}
+  .ams-cta {{ font-size:11px !important; padding-bottom:8px !important; margin-bottom:8px !important; }}
+  .ams-content {{ padding:12px !important; }}
 }}
 """
