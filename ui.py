@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import gradio as gr
 
+import lora_stack
 import tooltips
 
 
@@ -76,14 +77,12 @@ def build_generate_tab() -> dict[str, gr.components.Component]:
                     "replaces the active LoRA._",
                     elem_classes=["ams-lora-note"],
                 )
+                # Preset choices are read from presets/manifest.json so the
+                # radio stays in sync with whatever official ACE-Step LoRAs
+                # are actually published on HuggingFace.
+                _preset_names = ["None"] + [p["name"] for p in lora_stack.load_presets()]
                 components["lora_preset"] = gr.Radio(
-                    choices=[
-                        "None",
-                        "RapMachine",
-                        "Chinese Rap",
-                        "Lyric2Vocal",
-                        "Text2Samples",
-                    ],
+                    choices=_preset_names,
                     value="None",
                     label="Preset",
                     elem_classes=["ams-lora-preset"],
