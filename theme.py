@@ -398,7 +398,9 @@ main, .contain {{
   letter-spacing:0 !important;
   font-weight:500 !important;
   color:{INK} !important;
-  background:{SURFACE_STRONG} !important;
+  /* Pure pitch-black background so cool-display tinting can't read
+     into a neutral grey as bluish. */
+  background:#000 !important;
   border:1px solid {BORDER} !important;
   border-radius:3px !important;
   padding:7px 12px !important;
@@ -409,11 +411,11 @@ main, .contain {{
 }}
 .ams-content .wrap > label:hover {{
   border-color:{BORDER_STRONG} !important;
-  background:{HOVER_BG} !important;
+  background:#0F0F0F !important;
 }}
 .ams-content .wrap > label:has(input[type="radio"]:checked) {{
   border-color:{PRIMARY} !important;
-  background:{SURFACE_RAISED} !important;
+  background:#0F0F0F !important;
 }}
 /* Custom radio dot */
 .ams-content .wrap > label input[type="radio"] {{
@@ -495,10 +497,47 @@ main, .contain {{
   padding:0 0 6px 0 !important;
   display:block !important;
 }}
-/* Empty-state svg glyphs (music note, JSON braces) — center + muted */
-.ams-content .ams-out svg {{
+/* Hide Gradio's tiny inline icon SVG that sits inside the Output /
+   Metadata label (an 11x11 music-note / braces glyph). The wireframe
+   doesn't show these; they overlap the label text and create a
+   "broken" feel. Note that the LARGE empty-state SVG (centered in
+   the panel body) lives inside ``.empty.svelte-v95lt3`` and is
+   spared by this selector since it's not a direct label child. */
+.ams-content .ams-out label svg,
+.ams-content .ams-out > label > span:first-child:has(svg) {{
+  display:none !important;
+}}
+/* The large empty-state SVG centered in the panel body — keep, but
+   make it visually softer (muted faint ink, low opacity). */
+.ams-content .ams-out .empty svg,
+.ams-content .ams-out [class*="empty"] svg {{
   color:{INK_FAINT} !important;
   opacity:0.5 !important;
+}}
+
+/* ============================================================
+ * Defeat Gradio's ``div.styler`` wrapper backgrounds.
+ * Gradio wraps every Row / Form in a <div class="styler svelte-..."
+ * which has background:var(--border-color-primary) = #1F1F1F by
+ * default. That produces visible slate-blue "bands" between the
+ * form rows (most obviously around the Generate button) on cool
+ * displays. Force it transparent everywhere inside our content.
+ * ============================================================ */
+.ams-content .styler,
+.ams-content [class*="styler"],
+.ams-content .form > .styler {{
+  background:transparent !important;
+  border:none !important;
+  padding:0 !important;
+}}
+
+/* Defeat any residual Gradio block bg that might pull a slate value
+   despite our --neutral-* override (defensive, harmless if it's
+   already correct). */
+.ams-content > .row,
+.ams-content > .row > .column,
+.ams-content .form {{
+  background:transparent !important;
 }}
 
 /* Add explicit gap between form column and output column when stacked */
