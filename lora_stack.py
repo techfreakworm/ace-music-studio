@@ -120,3 +120,32 @@ def sniff(path: Path | str) -> LoRAInfo:
         diagnostic=diagnostic,
         file_size=file_size,
     )
+
+
+_PRESETS_PATH = Path(__file__).resolve().parent / "presets" / "manifest.json"
+
+
+def load_presets() -> list[dict]:
+    """Load the bundled LoRA preset manifest."""
+    return json.loads(_PRESETS_PATH.read_text())
+
+
+def download_preset(name: str) -> Path:
+    """Download a preset LoRA from HF if not already cached.
+
+    Returns the local path on success. Raises LoRAValidationError if the
+    preset name is unknown OR the HF download fails (network, 404, etc.).
+    """
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.utils import HfHubHTTPError
+
+    for p in load_presets():
+        if p["name"] == name:
+            try:
+                local = hf_hub_download(repo_id=p["hf_id"], filename=p["filename"])
+                return Path(local)
+            except HfHubHTTPError as e:
+                raise LoRAValidationError(
+                    f"Could not download preset {name!r} from {p['hf_id']!r}: {e}"
+                ) from e
+    raise LoRAValidationError(f"Unknown preset: {name}")

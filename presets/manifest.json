@@ -1,0 +1,30 @@
+[
+  {
+    "name": "RapMachine",
+    "hf_id": "ACE-Step/ACE-Step-v1-RapMachine-LoRA",
+    "filename": "RapMachine.safetensors",
+    "kind": "genre",
+    "default_scale": 0.85
+  },
+  {
+    "name": "Chinese Rap",
+    "hf_id": "ACE-Step/ACE-Step-v1-Chinese-Rap-LoRA",
+    "filename": "ChineseRap.safetensors",
+    "kind": "genre",
+    "default_scale": 0.85
+  },
+  {
+    "name": "Lyric2Vocal",
+    "hf_id": "ACE-Step/ACE-Step-v1-Lyric2Vocal-LoRA",
+    "filename": "Lyric2Vocal.safetensors",
+    "kind": "voice",
+    "default_scale": 0.70
+  },
+  {
+    "name": "Text2Samples",
+    "hf_id": "ACE-Step/ACE-Step-v1-Text2Samples-LoRA",
+    "filename": "Text2Samples.safetensors",
+    "kind": "instrumental",
+    "default_scale": 0.80
+  }
+]
