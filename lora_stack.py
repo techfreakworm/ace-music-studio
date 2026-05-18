@@ -20,9 +20,12 @@ function can be extended without changing the wrapper's call sites.
 from __future__ import annotations
 
 import json
+import logging
 import struct
 from dataclasses import dataclass
 from pathlib import Path
+
+_log = logging.getLogger("ams.lora")
 
 # Expected DiT module suffixes for ACE-Step 1.5 XL SFT.
 # Match against `*.to_q.lora_A.weight`, etc.
@@ -149,3 +152,33 @@ def download_preset(name: str) -> Path:
                     f"Could not download preset {name!r} from {p['hf_id']!r}: {e}"
                 ) from e
     raise LoRAValidationError(f"Unknown preset: {name}")
+
+
+def apply_stack(pipe, stack: list[dict]) -> None:
+    """Activate the given LoRA stack on the pipeline's DiT handler.
+
+    Apple-Silicon fork supports only one active LoRA at a time
+    (see module docstring). Behaviour:
+
+    - ``stack == []``: disable + unload the current LoRA.
+    - ``len(stack) == 1``: load + set scale + enable.
+    - ``len(stack) >= 2``: load the first, warn that the rest is ignored.
+    """
+    dit = pipe._dit  # internal AceStepHandler reference
+    if not stack:
+        dit.unload_lora()
+        dit.set_use_lora(False)
+        return
+
+    if len(stack) > 1:
+        _log.warning(
+            "apply_stack received %d LoRAs but only one is supported by "
+            "the apple-silicon ACE-Step fork; activating %r and ignoring the rest.",
+            len(stack),
+            stack[0]["name"],
+        )
+
+    first = stack[0]
+    dit.load_lora(first["path"])
+    dit.set_lora_scale(float(first["scale"]))
+    dit.set_use_lora(True)
