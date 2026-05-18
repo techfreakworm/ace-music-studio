@@ -3,6 +3,7 @@
 Palette tokens are the source of truth; CSS pulls from them. The audio
 waveform is the only optionally-colored element (rendered white in v1).
 """
+
 from __future__ import annotations
 
 import gradio as gr
@@ -18,9 +19,7 @@ INK_MUTED = "#6B6B6B"
 PRIMARY = "#FFFFFF"
 ERROR_BG = "#1A1A1A"
 RADIUS = "6px"
-FONT_STACK = (
-    '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
-)
+FONT_STACK = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
 
 
 def build_theme() -> gr.themes.Base:

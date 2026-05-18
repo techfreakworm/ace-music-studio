@@ -4,6 +4,7 @@ On HF Spaces, `_bootstrap()` runs once on import to mirror the read-only
 preload cache into a writable tree. On Mac/Linux locally, it's a no-op.
 The backend singleton is lazy-loaded on first generation request.
 """
+
 from __future__ import annotations
 
 import os

@@ -3,6 +3,7 @@
 Mirrors z-image-studio's `models.py` pattern. M0 only implements device
 detection — the pipeline class itself is filled in at M1.
 """
+
 from __future__ import annotations
 
 

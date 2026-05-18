@@ -1,4 +1,5 @@
 """L1 tests for device autodetect — no torch needed if we mock importlib."""
+
 from __future__ import annotations
 
 import ace_pipeline as ap
