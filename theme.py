@@ -552,7 +552,7 @@ main, .contain {{
 }}
 
 /* ============================================================
- * LoRA chip pill — kept for M2 wiring
+ * LoRA chip pill — kept for legacy use (chip-style hooks elsewhere)
  * ============================================================ */
 .ams-chip {{
   display:inline-block; padding:5px 10px; border-radius:14px;
@@ -561,7 +561,230 @@ main, .contain {{
 }}
 .ams-chip.on {{ border-color:{PRIMARY}; color:{PRIMARY}; }}
 .ams-chip.upload {{ border-style:dashed; color:{PRIMARY}; }}
-.ams-lora-file .upload-container {{ min-height:56px !important; }}
+
+/* ============================================================
+ * LoRA accordion (D5)
+ * The collapsed accordion sits between the duration/vocal-mode row
+ * and the Generate button. Inside: a note, preset radio, custom
+ * upload, strength slider, and an "Active: …" Markdown line.
+ * The outer chrome matches the wireframe's bordered section header.
+ * ============================================================ */
+.ams-content .ams-lora {{
+  border:1px solid {BORDER} !important;
+  border-radius:3px !important;
+  background:{SURFACE_STRONG} !important;
+  margin-top:10px !important;
+  padding:0 !important;
+}}
+/* Accordion summary / label. Gradio 6.14 renders this as either
+   .label-wrap (older builds) or a native <summary> element. Style
+   both so the uppercase-mono header is consistent. */
+.ams-content .ams-lora > .label-wrap,
+.ams-content .ams-lora summary,
+.ams-content .ams-lora > button {{
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+  color:{INK_MUTED} !important;
+  padding:10px 12px !important;
+  background:transparent !important;
+  border:none !important;
+}}
+.ams-content .ams-lora > .label-wrap span,
+.ams-content .ams-lora summary span,
+.ams-content .ams-lora > button span {{
+  color:{INK_MUTED} !important;
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+}}
+/* Italic note under the header */
+.ams-content .ams-lora-note p {{
+  font-family: {FONT_SANS} !important;
+  font-size:10px !important;
+  font-style:italic !important;
+  color:{INK_FAINT} !important;
+  line-height:1.4 !important;
+  margin:0 0 10px 0 !important;
+  padding:0 12px !important;
+}}
+/* The expanded body padding — Gradio drops the children inside
+   .gap (or unnamed wrapper) directly. Use a left/right padding so
+   the radio + file + slider don't hug the border. */
+.ams-content .ams-lora > div:not(.label-wrap):not(summary) {{
+  padding:0 12px 12px 12px !important;
+}}
+/* Preset radio: row of compact pills. Gradio renders the radio body
+   as ``fieldset.ams-lora-preset > div.wrap.svelte-e4x47i > label*``.
+   The generic Vocal-mode rule
+       .ams-content .block:has(input[type="radio"]) .wrap
+   computes specificity (0,4,1) — three classes + the inner attribute
+   selector via :has. To beat that we chain ``.ams-content .ams-lora
+   .ams-lora-preset.ams-lora-preset > .wrap`` which is (0,5,0), winning
+   by one class. */
+.ams-content .ams-lora .ams-lora-preset.ams-lora-preset > .wrap {{
+  display:flex !important;
+  flex-direction:row !important;
+  flex-wrap:wrap !important;
+  gap:6px !important;
+  background:transparent !important;
+  border:none !important;
+  padding:0 !important;
+  width:100% !important;
+}}
+.ams-content .ams-lora .ams-lora-preset.ams-lora-preset > .wrap > label {{
+  flex:0 0 auto !important;
+  width:auto !important;
+  max-width:max-content !important;
+  min-width:0 !important;
+  background:#000 !important;
+  border:1px solid {BORDER} !important;
+  border-radius:14px !important;
+  padding:5px 12px !important;
+  font-size:11px !important;
+  color:{INK_MUTED} !important;
+  font-weight:500 !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:0 !important;
+  cursor:pointer !important;
+}}
+.ams-content .ams-lora .ams-lora-preset.ams-lora-preset > .wrap > label:hover {{
+  color:{INK} !important;
+  border-color:{BORDER_STRONG} !important;
+}}
+.ams-content .ams-lora .ams-lora-preset.ams-lora-preset > .wrap > label:has(input[type="radio"]:checked) {{
+  border-color:{PRIMARY} !important;
+  color:{PRIMARY} !important;
+  background:#0F0F0F !important;
+}}
+/* Hide the inner radio-dot input; the pill border + color carries
+   the on/off state on its own. */
+.ams-content .ams-lora .ams-lora-preset.ams-lora-preset > .wrap > label input[type="radio"] {{
+  display:none !important;
+  width:0 !important; height:0 !important;
+  margin:0 !important; padding:0 !important;
+  background:none !important;
+  border:none !important;
+}}
+.ams-content .ams-lora .ams-lora-preset.ams-lora-preset > .wrap > label span {{
+  text-transform:none !important;
+  letter-spacing:0 !important;
+  font-family: {FONT_SANS} !important;
+  font-size:11px !important;
+  color:inherit !important;
+  font-weight:500 !important;
+}}
+
+/* Custom-upload file widget. Gradio 6.14 renders the drop-zone as
+   ``button.svelte-8prmba`` (NOT ``.upload-container``). The label
+   above it is ``label.svelte-19djge9.float`` which carries the
+   uploaded-file metadata once a file is dropped. Style the actual
+   drop-button and override the legacy ``.upload-container`` rule
+   from above for forward compatibility. */
+.ams-content .ams-lora-file > button {{
+  min-height:80px !important;
+  background:#000 !important;
+  border:1px dashed {BORDER_STRONG} !important;
+  border-radius:3px !important;
+  color:{INK_MUTED} !important;
+  padding:14px 12px !important;
+}}
+.ams-content .ams-lora-file > button:hover {{
+  border-color:{PRIMARY} !important;
+  color:{INK} !important;
+}}
+.ams-content .ams-lora-file > button .or {{
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  color:{INK_FAINT} !important;
+  letter-spacing:0.04em !important;
+}}
+.ams-content .ams-lora-file > button .icon-wrap svg {{
+  color:{INK_MUTED} !important;
+  opacity:0.7 !important;
+  width:18px !important;
+  height:18px !important;
+}}
+/* The floating label that appears once a file is uploaded — give it
+   the standard Brutalist mono treatment and hide its decorative SVG
+   so the label text reads cleanly. */
+.ams-content .ams-lora-file > label.float {{
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+  color:{INK_MUTED} !important;
+  background:transparent !important;
+  border:none !important;
+  padding:0 0 6px 0 !important;
+}}
+.ams-content .ams-lora-file > label.float svg {{
+  display:none !important;
+}}
+
+/* Strength slider — the .info text just below it inherits the
+   generic helper rule, so no extra work needed. */
+.ams-content .ams-lora-strength input[type="range"] {{
+  accent-color:{PRIMARY} !important;
+}}
+
+/* Active LoRA display — high-contrast block, mono font, code in
+   white so the LoRA name pops. The accordion's own background is
+   SURFACE_STRONG (true black), so use a slightly raised surface
+   here to make the bordered box visible. */
+.ams-content .ams-lora-active .prose p {{
+  font-family: {FONT_MONO} !important;
+  font-size:11px !important;
+  color:{INK} !important;
+  background:{SURFACE_RAISED} !important;
+  border:1px solid {BORDER_STRONG} !important;
+  border-radius:3px !important;
+  padding:8px 10px !important;
+  margin:8px 0 0 0 !important;
+  line-height:1.5 !important;
+}}
+.ams-content .ams-lora-active .prose code {{
+  background:transparent !important;
+  color:{PRIMARY} !important;
+  font-family: {FONT_MONO} !important;
+  font-size:11px !important;
+  padding:0 !important;
+}}
+.ams-content .ams-lora-active .prose em {{
+  color:{INK_FAINT} !important;
+  font-style:italic !important;
+  font-family: {FONT_SANS} !important;
+}}
+@media (max-width: 640px) {{
+  .ams-content .ams-lora > .label-wrap,
+  .ams-content .ams-lora summary,
+  .ams-content .ams-lora > button {{
+    font-size:9px !important;
+    padding:8px 10px !important;
+  }}
+  .ams-content .ams-lora-note p {{
+    font-size:9px !important;
+    padding:0 10px !important;
+  }}
+  .ams-content .ams-lora > div:not(.label-wrap):not(summary) {{
+    padding:0 10px 10px 10px !important;
+  }}
+  .ams-content .ams-lora-active .prose p {{
+    font-size:10px !important;
+    padding:6px 8px !important;
+  }}
+  .ams-content .ams-lora .ams-lora-preset.ams-lora-preset > .wrap > label {{
+    font-size:10px !important;
+    padding:5px 9px !important;
+  }}
+  .ams-content .ams-lora-file > button {{
+    min-height:64px !important;
+    padding:10px 8px !important;
+  }}
+}}
 
 /* Hide Gradio footer + the floating "Use via API" / settings panel */
 footer {{ display:none !important; }}
