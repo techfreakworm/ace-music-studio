@@ -1,0 +1,572 @@
+<h2>Cover and Extend · everything expanded</h2>
+<p class="subtitle">Every accordion open. Every control visible. Showing the actual depth of options. In production, "Advanced", "LM planner", "DCW" stay collapsed by default — but this is the full surface so you can verify nothing is missing.</p>
+
+<style>
+  /* base */
+  .gm { background:#0A0A0A; color:#E5E5E5; border:1px solid #1F1F1F; border-radius:10px; padding:18px; font-size:12px; line-height:1.5; margin-top:14px; }
+  .gm-header { display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; border-bottom:1px solid #1F1F1F; margin-bottom:14px; }
+  .gm-brand { font-size:15px; font-weight:600; }
+  .gm-cta { font-size:11px; color:#6B6B6B; }
+  .gm-cta strong { color:#E5E5E5; }
+  .gm-status { font-size:10px; color:#6B6B6B; letter-spacing:0.08em; text-transform:uppercase; }
+  .gm-row { display:flex; gap:16px; align-items:flex-start; }
+  .gm-sidebar { background:#000; padding:14px 10px; border-radius:6px; min-width:170px; position:sticky; top:0; }
+  .gm-side { display:block; padding:8px 10px; border-radius:4px; margin-bottom:3px; font-size:12px; color:#6B6B6B; }
+  .gm-side.active { background:#1A1A1A; color:#FFF; border-left:2px solid #FFF; padding-left:8px; }
+  .gm-side .em { margin-right:6px; }
+  .gm-main { flex:1; display:flex; gap:14px; align-items:flex-start; }
+  .gm-form { flex:1.3; background:#141414; padding:16px; border-radius:6px; }
+  .gm-output { flex:1; background:#141414; padding:16px; border-radius:6px; min-width:260px; position:sticky; top:0; }
+
+  /* form controls */
+  .gm-label { font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:#6B6B6B; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; }
+  .gm-label .hint { color:#5A5048; font-size:9px; text-transform:none; letter-spacing:normal; font-weight:400; }
+  .gm-input { background:#000; border:1px solid #2A2A2A; padding:8px 10px; border-radius:4px; color:#E5E5E5; margin-bottom:12px; font-size:11px; }
+  .gm-textarea { min-height:46px; }
+  .gm-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+  .gm-grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:12px; }
+  .gm-grid4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; margin-bottom:12px; }
+
+  /* slider */
+  .gm-slider-row { display:flex; align-items:center; gap:10px; padding:6px 8px; background:#000; border:1px solid #2A2A2A; border-radius:4px; margin-bottom:8px; font-size:11px; }
+  .gm-slider-row .name { color:#6B6B6B; font-size:10px; min-width:90px; }
+  .gm-slider { flex:1; height:3px; background:#2A2A2A; border-radius:2px; position:relative; }
+  .gm-slider::after { content:""; position:absolute; top:-4px; width:10px; height:10px; background:#FFF; border-radius:50%; }
+  .gm-slider.p10::after { left:10%; }
+  .gm-slider.p20::after { left:20%; }
+  .gm-slider.p30::after { left:30%; }
+  .gm-slider.p40::after { left:40%; }
+  .gm-slider.p50::after { left:50%; }
+  .gm-slider.p60::after { left:60%; }
+  .gm-slider.p70::after { left:70%; }
+  .gm-slider.p85::after { left:85%; }
+  .gm-slider.p93::after { left:93%; }
+  .gm-slider.p95::after { left:95%; }
+  .gm-slider-row .val { color:#FFF; font-family:monospace; font-size:11px; min-width:42px; text-align:right; }
+
+  /* toggle */
+  .gm-toggle { display:flex; align-items:center; gap:8px; padding:6px 10px; background:#000; border:1px solid #2A2A2A; border-radius:4px; margin-bottom:8px; font-size:11px; cursor:pointer; }
+  .gm-toggle .box { width:14px; height:14px; border:1px solid #2A2A2A; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; font-size:9px; }
+  .gm-toggle.on { color:#FFF; border-color:#FFF; }
+  .gm-toggle.on .box { background:#FFF; color:#0A0A0A; border-color:#FFF; }
+
+  /* radio pill */
+  .gm-pills { display:flex; gap:0; background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:2px; margin-bottom:12px; }
+  .gm-pill { flex:1; text-align:center; padding:6px 10px; font-size:11px; color:#6B6B6B; border-radius:3px; cursor:pointer; }
+  .gm-pill.on { background:#FFF; color:#0A0A0A; }
+
+  /* select */
+  .gm-select { background:#000; border:1px solid #2A2A2A; padding:8px 10px; border-radius:4px; color:#E5E5E5; font-size:11px; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .gm-select .arrow { color:#6B6B6B; }
+
+  /* section divider */
+  .gm-section { border:1px solid #2A2A2A; border-radius:4px; padding:14px; margin-top:14px; background:#0F0F0F; }
+  .gm-section-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:11px; font-weight:600; }
+  .gm-section-h .arrow { color:#FFF; }
+  .gm-section-h .meta { color:#6B6B6B; font-weight:400; font-size:10px; }
+
+  .gm-chip { display:inline-block; padding:5px 10px; border-radius:14px; font-size:10px; margin-right:5px; margin-bottom:5px; background:#000; border:1px solid #2A2A2A; color:#6B6B6B; cursor:pointer; }
+  .gm-chip.on { border-color:#FFF; color:#FFF; }
+  .gm-chip.upload { border-style:dashed; color:#FFF; }
+
+  .gm-lora-row { display:flex; align-items:center; gap:10px; padding:8px 10px; background:#000; border:1px solid #2A2A2A; border-radius:4px; margin-bottom:6px; font-size:11px; }
+  .gm-lora-name { flex:1; }
+  .gm-lora-name small { color:#6B6B6B; font-weight:400; margin-left:4px; }
+  .gm-x { color:#6B6B6B; cursor:pointer; padding:0 4px; }
+
+  .gm-btn { background:#FFF; color:#0A0A0A; padding:12px 18px; border-radius:4px; font-weight:600; display:block; font-size:13px; text-align:center; cursor:pointer; margin-top:16px; }
+
+  /* drop zone */
+  .gm-dropzone { background:#000; border:2px dashed #2A2A2A; border-radius:6px; padding:14px; margin-bottom:12px; text-align:center; font-size:11px; color:#6B6B6B; }
+  .gm-dropzone.has-file { border-style:solid; border-color:#FFF; color:#FFF; text-align:left; padding:10px 12px; }
+  .gm-dropzone .filename { font-weight:600; }
+  .gm-dropzone .meta { color:#6B6B6B; font-size:9px; margin-top:2px; font-weight:400; }
+  .gm-dropzone .miniwave { height:18px; background:repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 3px); margin-top:6px; opacity:0.5; }
+
+  /* output */
+  .gm-waveform { height:60px; background:#000; border:1px solid #2A2A2A; border-radius:4px; display:flex; align-items:center; justify-content:center; gap:2px; padding:8px; margin-bottom:10px; }
+  .gm-bar { width:2px; background:#E5E5E5; }
+  .gm-player-controls { display:flex; align-items:center; gap:10px; color:#6B6B6B; font-size:10px; margin-bottom:14px; }
+  .gm-play { width:28px; height:28px; border-radius:50%; background:#FFF; color:#0A0A0A; display:flex; align-items:center; justify-content:center; font-size:11px; }
+  .gm-stems { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:10px; }
+  .gm-stem { background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:6px 10px; font-size:10px; display:flex; justify-content:space-between; align-items:center; }
+  .gm-stem .dl { color:#FFF; cursor:pointer; }
+  .gm-meta-block { background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:8px 10px; font-size:9px; color:#6B6B6B; font-family:monospace; line-height:1.6; max-height:140px; overflow:hidden; margin-top:8px; }
+  .gm-actions { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .gm-secondary { border:1px solid #2A2A2A; color:#E5E5E5; padding:6px 12px; border-radius:4px; font-size:10px; cursor:pointer; }
+</style>
+
+
+<h3 style="margin-top:14px">🎤 Cover — fully expanded</h3>
+
+<div class="gm">
+  <div class="gm-header">
+    <div>
+      <div class="gm-brand">ACE Music Studio<span style="color:#FFF">.</span></div>
+      <div class="gm-cta" style="margin-top:2px">Built with <span style="color:#FFF">♥</span>. <strong>Drop a like</strong> · Follow <strong>@techfreakworm</strong> for what's next.</div>
+    </div>
+    <div class="gm-status">ready · MPS · M5 Max</div>
+  </div>
+
+  <div class="gm-row">
+    <div class="gm-sidebar">
+      <div class="gm-side"><span class="em">🎵</span>Generate</div>
+      <div class="gm-side active"><span class="em">🎤</span>Cover</div>
+      <div class="gm-side"><span class="em">⏩</span>Extend</div>
+      <div class="gm-side"><span class="em">✏️</span>Edit</div>
+      <div class="gm-side"><span class="em">✍️</span>Lyrics</div>
+      <div style="border-top:1px solid #1F1F1F; margin:14px 0 10px; padding-top:10px; font-size:9px; color:#6B6B6B; text-transform:uppercase; letter-spacing:0.1em;">History · session</div>
+      <div style="font-size:10px; color:#6B6B6B; padding:4px 8px;">▶ psy_cover · just now</div>
+      <div style="font-size:10px; color:#6B6B6B; padding:4px 8px;">▶ lofi_remix · 3m</div>
+      <div style="font-size:10px; color:#6B6B6B; padding:4px 8px;">▶ ambient_v2 · 12m</div>
+    </div>
+
+    <div class="gm-main">
+      <div class="gm-form">
+
+        <div class="gm-label">1 · Reference audio <span class="hint">wav / mp3 / flac · ≤ 60 s · matters most for first 12 s</span></div>
+        <div class="gm-dropzone has-file">
+          <div class="filename">↑ reference_psy_track.wav</div>
+          <div class="meta">44.1 kHz · stereo · 28.4 s · 2.1 MB</div>
+          <div class="miniwave"></div>
+        </div>
+
+        <div class="gm-label">2 · New style prompt <span class="hint">leave blank to fully inherit reference style</span></div>
+        <div class="gm-input">faster, more aggressive leads, club-ready</div>
+
+        <div class="gm-label">3 · New lyrics <span class="hint">use [verse] [chorus] [bridge] tags · open Lyrics tab to draft with AI</span></div>
+        <div class="gm-input gm-textarea">[intro] driving acid bassline<br>[verse] new lyrics over the reference style<br>[chorus] one more time, one more time<br>[outro] ...</div>
+
+        <div class="gm-grid2">
+          <div>
+            <div class="gm-label">Duration <span class="hint">seconds</span></div>
+            <div class="gm-slider-row"><span class="name">5 – 240 s</span><span class="gm-slider p10"></span><span class="val">30</span></div>
+          </div>
+          <div>
+            <div class="gm-label">Vocal mode</div>
+            <div class="gm-pills">
+              <div class="gm-pill on">With vocals</div>
+              <div class="gm-pill">Instrumental</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="gm-label">Cover-specific <span class="hint">how the reference influences the output</span></div>
+        <div class="gm-slider-row"><span class="name">Cover strength</span><span class="gm-slider p93"></span><span class="val">0.93</span></div>
+        <div class="gm-slider-row"><span class="name">Cover noise</span><span class="gm-slider p10" style="--p:0.05;"></span><span class="val">0.00</span></div>
+
+        <!-- LoRA section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>LoRA stack <span class="meta">· 2 active</span></span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-label">Bundled presets <span class="hint">click to toggle</span></div>
+          <div style="margin-bottom:12px;">
+            <span class="gm-chip on">RapMachine</span>
+            <span class="gm-chip">Chinese Rap</span>
+            <span class="gm-chip">Lyric2Vocal</span>
+            <span class="gm-chip">Text2Samples</span>
+          </div>
+
+          <div class="gm-label">Active stack <span class="hint">applied in order, top first</span></div>
+          <div class="gm-lora-row">
+            <span class="gm-lora-name">RapMachine <small>· preset</small></span>
+            <span class="gm-slider p85" style="width:100px"></span>
+            <span class="val" style="color:#FFF; font-family:monospace; font-size:11px;">0.85</span>
+            <span class="gm-x">×</span>
+          </div>
+          <div class="gm-lora-row">
+            <span class="gm-lora-name">psytrance_v2 <small>· custom · 47 MB · rank 64</small></span>
+            <span class="gm-slider p95" style="width:100px"></span>
+            <span class="val" style="color:#FFF; font-family:monospace; font-size:11px;">0.95</span>
+            <span class="gm-x">×</span>
+          </div>
+
+          <div style="margin-top:10px;">
+            <span class="gm-chip upload">↑ drop .safetensors here or click</span>
+          </div>
+        </div>
+
+        <!-- Advanced section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>Advanced</span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-grid3">
+            <div><div class="gm-label">BPM</div><div class="gm-input" style="margin-bottom:0">135</div></div>
+            <div><div class="gm-label">Key / scale</div><div class="gm-input" style="margin-bottom:0">auto</div></div>
+            <div><div class="gm-label">Time sig</div><div class="gm-input" style="margin-bottom:0">4 / 4</div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Sampler</div><div class="gm-select">heun <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">Vocal language</div><div class="gm-select">auto <span class="arrow">▾</span></div></div>
+          </div>
+
+          <div class="gm-slider-row"><span class="name">Inference steps</span><span class="gm-slider p20"></span><span class="val">50</span></div>
+          <div class="gm-slider-row"><span class="name">CFG scale</span><span class="gm-slider p40"></span><span class="val">5.0</span></div>
+          <div class="gm-slider-row"><span class="name">Shift</span><span class="gm-slider p30"></span><span class="val">3</span></div>
+
+          <div class="gm-label" style="margin-top:8px">Negative prompt <span class="hint">things to avoid in the output</span></div>
+          <div class="gm-input gm-textarea" style="font-size:10px">bitcrushed, aliasing, jazz, pop, vocal hooks, slow tempo</div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Audio format</div><div class="gm-pills"><div class="gm-pill on">mp3 320</div><div class="gm-pill">wav 44.1</div></div></div>
+            <div><div class="gm-label">Loudness</div><div class="gm-toggle on"><span class="box">✓</span> Normalize to -14 LUFS</div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Fade in</div><div class="gm-input" style="margin-bottom:0">0.0 s</div></div>
+            <div><div class="gm-label">Fade out</div><div class="gm-input" style="margin-bottom:0">0.0 s</div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Seed</div><div class="gm-input" style="margin-bottom:0; font-family:monospace">1297183202</div></div>
+            <div><div class="gm-label">&nbsp;</div><div class="gm-toggle"><span class="box"></span> Lock seed · re-use across retakes</div></div>
+          </div>
+        </div>
+
+        <!-- LM planner section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>LM planner · Qwen3 thinking</span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-toggle on"><span class="box">✓</span> Thinking enabled <span style="color:#6B6B6B; font-size:9px; margin-left:auto">+ slower but better structure</span></div>
+          <div class="gm-toggle on"><span class="box">✓</span> Constrained decoding</div>
+
+          <div class="gm-grid4" style="margin-top:8px">
+            <div><div class="gm-label">Temp</div><div class="gm-input" style="margin-bottom:0">0.85</div></div>
+            <div><div class="gm-label">Top-k</div><div class="gm-input" style="margin-bottom:0">0</div></div>
+            <div><div class="gm-label">Top-p</div><div class="gm-input" style="margin-bottom:0">0.90</div></div>
+            <div><div class="gm-label">LM CFG</div><div class="gm-input" style="margin-bottom:0">2</div></div>
+          </div>
+
+          <div class="gm-label">CoT pipeline toggles <span class="hint">which fields the LM rewrites</span></div>
+          <div class="gm-grid4">
+            <div class="gm-toggle"><span class="box"></span> metas</div>
+            <div class="gm-toggle"><span class="box"></span> caption</div>
+            <div class="gm-toggle"><span class="box"></span> lyrics</div>
+            <div class="gm-toggle"><span class="box"></span> language</div>
+          </div>
+
+          <div class="gm-label">LM negative prompt</div>
+          <div class="gm-input" style="font-size:10px">happy chords, major scale</div>
+        </div>
+
+        <!-- DCW section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>DCW · dynamic CFG warping</span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-toggle on"><span class="box">✓</span> DCW enabled</div>
+
+          <div class="gm-grid3">
+            <div><div class="gm-label">Mode</div><div class="gm-select">double <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">Wavelet</div><div class="gm-select">haar <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">&nbsp;</div><div style="font-size:9px; color:#6B6B6B; padding-top:8px;">leave defaults if unsure</div></div>
+          </div>
+
+          <div class="gm-slider-row"><span class="name">DCW scaler</span><span class="gm-slider p10"></span><span class="val">0.02</span></div>
+          <div class="gm-slider-row"><span class="name">High scaler</span><span class="gm-slider p10"></span><span class="val">0.06</span></div>
+        </div>
+
+        <div class="gm-btn">▶ Generate cover · est. ~35 s on M5 Max</div>
+      </div>
+
+      <!-- Output panel -->
+      <div class="gm-output">
+        <div class="gm-label" style="margin-bottom:10px">Output · cover · 30 s · seed 1297183202</div>
+
+        <div class="gm-toggle"><span class="box"></span> Compare side-by-side with reference</div>
+
+        <div class="gm-waveform">
+          <div class="gm-bar" style="height:22%"></div><div class="gm-bar" style="height:54%"></div><div class="gm-bar" style="height:78%"></div><div class="gm-bar" style="height:42%"></div><div class="gm-bar" style="height:62%"></div><div class="gm-bar" style="height:88%"></div><div class="gm-bar" style="height:32%"></div><div class="gm-bar" style="height:70%"></div><div class="gm-bar" style="height:50%"></div><div class="gm-bar" style="height:84%"></div><div class="gm-bar" style="height:64%"></div><div class="gm-bar" style="height:38%"></div><div class="gm-bar" style="height:74%"></div><div class="gm-bar" style="height:46%"></div><div class="gm-bar" style="height:58%"></div><div class="gm-bar" style="height:80%"></div><div class="gm-bar" style="height:36%"></div><div class="gm-bar" style="height:68%"></div>
+        </div>
+
+        <div class="gm-player-controls">
+          <span class="gm-play">▶</span>
+          <span>0:00 / 0:30</span>
+          <span style="margin-left:auto; cursor:pointer; color:#FFF">↻ retake · new seed</span>
+        </div>
+
+        <div class="gm-label">Stems · Demucs htdemucs_ft</div>
+        <div class="gm-stems">
+          <div class="gm-stem"><span>vocals · 1.8 MB</span><span class="dl">↓</span></div>
+          <div class="gm-stem"><span>drums · 1.6 MB</span><span class="dl">↓</span></div>
+          <div class="gm-stem"><span>bass · 1.4 MB</span><span class="dl">↓</span></div>
+          <div class="gm-stem"><span>other · 1.7 MB</span><span class="dl">↓</span></div>
+        </div>
+
+        <div class="gm-label">Export</div>
+        <div class="gm-actions">
+          <span class="gm-secondary">↓ mp3 · 320k · 1.2 MB</span>
+          <span class="gm-secondary">↓ wav · 44.1k · 5.3 MB</span>
+          <span class="gm-secondary">↓ stems zip</span>
+          <span class="gm-secondary">{ } meta json</span>
+          <span class="gm-secondary">↗ copy share link</span>
+        </div>
+
+        <div class="gm-label" style="margin-top:14px">Metadata · for reproducibility</div>
+        <div class="gm-meta-block">
+{<br>
+&nbsp;&nbsp;"mode": "cover",<br>
+&nbsp;&nbsp;"prompt": "faster, more aggressive leads, club-ready",<br>
+&nbsp;&nbsp;"lyrics_first_line": "[intro] driving acid bassline...",<br>
+&nbsp;&nbsp;"ref_audio_sha256": "a4f1...d29c",<br>
+&nbsp;&nbsp;"duration_s": 30, "bpm": 135, "key": "auto",<br>
+&nbsp;&nbsp;"sampler": "heun", "steps": 50, "cfg": 5.0, "shift": 3,<br>
+&nbsp;&nbsp;"audio_cover_strength": 0.93, "cover_noise_strength": 0.0,<br>
+&nbsp;&nbsp;"lm": {"thinking": true, "temp": 0.85, "top_p": 0.9, "cfg": 2,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"cot": {"metas": false, "caption": false, "lyrics": false}},<br>
+&nbsp;&nbsp;"dcw": {"enabled": true, "mode": "double", "scaler": 0.02, "high_scaler": 0.06, "wavelet": "haar"},<br>
+&nbsp;&nbsp;"loras": [<br>
+&nbsp;&nbsp;&nbsp;&nbsp;{"name": "RapMachine", "scale": 0.85, "sha256": "b7e2..."},<br>
+&nbsp;&nbsp;&nbsp;&nbsp;{"name": "psytrance_v2", "scale": 0.95, "sha256": "0c94..."}<br>
+&nbsp;&nbsp;],<br>
+&nbsp;&nbsp;"seed": 1297183202,<br>
+&nbsp;&nbsp;"output_sha256": "f33a...19b8"<br>
+}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:30px">⏩ Extend — fully expanded</h3>
+
+<div class="gm">
+  <div class="gm-header">
+    <div>
+      <div class="gm-brand">ACE Music Studio<span style="color:#FFF">.</span></div>
+      <div class="gm-cta" style="margin-top:2px">Built with <span style="color:#FFF">♥</span>. <strong>Drop a like</strong> · Follow <strong>@techfreakworm</strong> for what's next.</div>
+    </div>
+    <div class="gm-status">ready · MPS · M5 Max</div>
+  </div>
+
+  <div class="gm-row">
+    <div class="gm-sidebar">
+      <div class="gm-side"><span class="em">🎵</span>Generate</div>
+      <div class="gm-side"><span class="em">🎤</span>Cover</div>
+      <div class="gm-side active"><span class="em">⏩</span>Extend</div>
+      <div class="gm-side"><span class="em">✏️</span>Edit</div>
+      <div class="gm-side"><span class="em">✍️</span>Lyrics</div>
+    </div>
+
+    <div class="gm-main">
+      <div class="gm-form">
+
+        <div class="gm-label">1 · Seed audio <span class="hint">what to continue · wav / mp3 / flac · ≤ 240 s</span></div>
+        <div class="gm-dropzone has-file">
+          <div class="filename">↑ unfinished_track_v3.wav</div>
+          <div class="meta">44.1 kHz · stereo · 1:42 · 18.0 MB · BPM detected 135 · key C minor</div>
+          <div class="miniwave"></div>
+        </div>
+
+        <div class="gm-label">2 · Extension prompt <span class="hint">style hint for what comes next</span></div>
+        <div class="gm-input">build to climax, layered acid leads, then breakdown</div>
+
+        <div class="gm-label">3 · Extension lyrics <span class="hint">optional · use [verse] [chorus] tags · blank = instrumental continuation</span></div>
+        <div class="gm-input gm-textarea">[bridge] the drop is coming...<br>[chorus] one more time, one more time</div>
+
+        <div class="gm-grid2">
+          <div>
+            <div class="gm-label">Extra duration <span class="hint">seconds</span></div>
+            <div class="gm-slider-row"><span class="name">5 – 120 s</span><span class="gm-slider p50"></span><span class="val">60</span></div>
+          </div>
+          <div>
+            <div class="gm-label">Vocal mode</div>
+            <div class="gm-pills"><div class="gm-pill on">With vocals</div><div class="gm-pill">Instrumental</div></div>
+          </div>
+        </div>
+
+        <div class="gm-label">Extend-specific <span class="hint">how the seam is handled</span></div>
+        <div class="gm-grid2">
+          <div><div class="gm-label">Repaint mode</div><div class="gm-select">balanced <span class="arrow">▾</span></div></div>
+          <div><div class="gm-label">Chunk mask</div><div class="gm-select">auto <span class="arrow">▾</span></div></div>
+        </div>
+        <div class="gm-slider-row"><span class="name">Repaint strength</span><span class="gm-slider p50"></span><span class="val">0.50</span></div>
+        <div class="gm-slider-row"><span class="name">Latent crossfade frames</span><span class="gm-slider p20"></span><span class="val">10</span></div>
+        <div class="gm-slider-row"><span class="name">WAV crossfade seconds</span><span class="gm-slider p10"></span><span class="val">2.0</span></div>
+
+        <!-- LoRA section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h"><span>LoRA stack <span class="meta">· 1 active</span></span><span class="arrow">▾</span></div>
+
+          <div class="gm-label">Bundled presets</div>
+          <div style="margin-bottom:12px;">
+            <span class="gm-chip">RapMachine</span>
+            <span class="gm-chip">Chinese Rap</span>
+            <span class="gm-chip">Lyric2Vocal</span>
+            <span class="gm-chip">Text2Samples</span>
+          </div>
+
+          <div class="gm-label">Active stack</div>
+          <div class="gm-lora-row">
+            <span class="gm-lora-name">psytrance_v2 <small>· custom · 47 MB</small></span>
+            <span class="gm-slider p95" style="width:100px"></span>
+            <span class="val" style="color:#FFF; font-family:monospace; font-size:11px;">0.95</span>
+            <span class="gm-x">×</span>
+          </div>
+
+          <div style="margin-top:10px;">
+            <span class="gm-chip upload">↑ drop .safetensors here</span>
+          </div>
+        </div>
+
+        <!-- Advanced section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h"><span>Advanced</span><span class="arrow">▾</span></div>
+
+          <div class="gm-grid3">
+            <div><div class="gm-label">BPM <span class="hint">inherits from seed if blank</span></div><div class="gm-input" style="margin-bottom:0">135</div></div>
+            <div><div class="gm-label">Key / scale</div><div class="gm-input" style="margin-bottom:0">C minor</div></div>
+            <div><div class="gm-label">Time sig</div><div class="gm-input" style="margin-bottom:0">4 / 4</div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Sampler</div><div class="gm-select">heun <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">Vocal language</div><div class="gm-select">en <span class="arrow">▾</span></div></div>
+          </div>
+
+          <div class="gm-slider-row"><span class="name">Inference steps</span><span class="gm-slider p20"></span><span class="val">50</span></div>
+          <div class="gm-slider-row"><span class="name">CFG scale</span><span class="gm-slider p40"></span><span class="val">5.0</span></div>
+          <div class="gm-slider-row"><span class="name">Shift</span><span class="gm-slider p30"></span><span class="val">3</span></div>
+
+          <div class="gm-label" style="margin-top:8px">Negative prompt</div>
+          <div class="gm-input gm-textarea" style="font-size:10px">bitcrushed, aliasing, lo-fi hiss</div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Audio format</div><div class="gm-pills"><div class="gm-pill on">mp3 320</div><div class="gm-pill">wav 44.1</div></div></div>
+            <div><div class="gm-label">Loudness</div><div class="gm-toggle on"><span class="box">✓</span> -14 LUFS</div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Seed</div><div class="gm-input" style="margin-bottom:0; font-family:monospace">9911</div></div>
+            <div><div class="gm-label">&nbsp;</div><div class="gm-toggle"><span class="box"></span> Lock seed</div></div>
+          </div>
+        </div>
+
+        <!-- LM planner section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h"><span>LM planner · Qwen3 thinking</span><span class="arrow">▾</span></div>
+          <div class="gm-toggle on"><span class="box">✓</span> Thinking enabled</div>
+          <div class="gm-toggle on"><span class="box">✓</span> Constrained decoding</div>
+          <div class="gm-grid4" style="margin-top:8px">
+            <div><div class="gm-label">Temp</div><div class="gm-input" style="margin-bottom:0">0.85</div></div>
+            <div><div class="gm-label">Top-k</div><div class="gm-input" style="margin-bottom:0">0</div></div>
+            <div><div class="gm-label">Top-p</div><div class="gm-input" style="margin-bottom:0">0.90</div></div>
+            <div><div class="gm-label">LM CFG</div><div class="gm-input" style="margin-bottom:0">2</div></div>
+          </div>
+          <div class="gm-label">CoT pipeline toggles</div>
+          <div class="gm-grid4">
+            <div class="gm-toggle"><span class="box"></span> metas</div>
+            <div class="gm-toggle"><span class="box"></span> caption</div>
+            <div class="gm-toggle"><span class="box"></span> lyrics</div>
+            <div class="gm-toggle"><span class="box"></span> language</div>
+          </div>
+        </div>
+
+        <!-- DCW section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h"><span>DCW · dynamic CFG warping</span><span class="arrow">▾</span></div>
+          <div class="gm-toggle on"><span class="box">✓</span> DCW enabled</div>
+          <div class="gm-grid2">
+            <div><div class="gm-label">Mode</div><div class="gm-select">double <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">Wavelet</div><div class="gm-select">haar <span class="arrow">▾</span></div></div>
+          </div>
+          <div class="gm-slider-row"><span class="name">DCW scaler</span><span class="gm-slider p10"></span><span class="val">0.02</span></div>
+          <div class="gm-slider-row"><span class="name">High scaler</span><span class="gm-slider p10"></span><span class="val">0.06</span></div>
+        </div>
+
+        <div class="gm-btn">▶ Extend · est. ~50 s · output 2:42 total</div>
+      </div>
+
+      <!-- Output panel -->
+      <div class="gm-output">
+        <div class="gm-label" style="margin-bottom:10px">Output · extended · 2:42 · seed 9911</div>
+
+        <div class="gm-toggle on"><span class="box">✓</span> Show seed boundary marker</div>
+
+        <div class="gm-waveform" style="position:relative">
+          <div class="gm-bar" style="height:32%"></div><div class="gm-bar" style="height:48%"></div><div class="gm-bar" style="height:64%"></div><div class="gm-bar" style="height:42%"></div><div class="gm-bar" style="height:58%"></div><div class="gm-bar" style="height:38%"></div><div class="gm-bar" style="height:52%"></div><div class="gm-bar" style="height:46%"></div><div class="gm-bar" style="height:34%; opacity:0.5"></div>
+          <div style="border-left:1px dashed #FFF; height:48px;"></div>
+          <div class="gm-bar" style="height:62%"></div><div class="gm-bar" style="height:78%"></div><div class="gm-bar" style="height:92%"></div><div class="gm-bar" style="height:84%"></div><div class="gm-bar" style="height:70%"></div><div class="gm-bar" style="height:58%"></div><div class="gm-bar" style="height:40%"></div>
+          <div style="position:absolute; bottom:-2px; left:50%; transform:translateX(-50%); font-size:8px; color:#FFF; background:#0A0A0A; padding:0 4px;">↑ seed ends · 1:42</div>
+        </div>
+
+        <div class="gm-player-controls">
+          <span class="gm-play">▶</span>
+          <span>0:00 / 2:42</span>
+          <span style="margin-left:auto; cursor:pointer; color:#FFF">↻ retake</span>
+        </div>
+
+        <div class="gm-label">Stems · Demucs</div>
+        <div class="gm-stems">
+          <div class="gm-stem"><span>vocals</span><span class="dl">↓</span></div>
+          <div class="gm-stem"><span>drums</span><span class="dl">↓</span></div>
+          <div class="gm-stem"><span>bass</span><span class="dl">↓</span></div>
+          <div class="gm-stem"><span>other</span><span class="dl">↓</span></div>
+        </div>
+
+        <div class="gm-label">Export</div>
+        <div class="gm-actions">
+          <span class="gm-secondary">↓ full mp3 · 6.3 MB</span>
+          <span class="gm-secondary">↓ extension-only mp3 · 2.4 MB</span>
+          <span class="gm-secondary">↓ full wav</span>
+          <span class="gm-secondary">↓ stems zip</span>
+          <span class="gm-secondary">{ } meta json</span>
+          <span class="gm-secondary">↗ share link</span>
+        </div>
+
+        <div class="gm-label" style="margin-top:14px">Metadata</div>
+        <div class="gm-meta-block">
+{<br>
+&nbsp;&nbsp;"mode": "extend",<br>
+&nbsp;&nbsp;"seed_audio_sha256": "e5c0...21ed",<br>
+&nbsp;&nbsp;"seed_duration_s": 102,<br>
+&nbsp;&nbsp;"extension_prompt": "build to climax, layered acid leads...",<br>
+&nbsp;&nbsp;"extension_lyrics_first_line": "[bridge] the drop is coming...",<br>
+&nbsp;&nbsp;"extra_duration_s": 60,<br>
+&nbsp;&nbsp;"repaint_mode": "balanced",<br>
+&nbsp;&nbsp;"repaint_strength": 0.5,<br>
+&nbsp;&nbsp;"latent_crossfade_frames": 10,<br>
+&nbsp;&nbsp;"wav_crossfade_s": 2.0,<br>
+&nbsp;&nbsp;"chunk_mask_mode": "auto",<br>
+&nbsp;&nbsp;"bpm": 135, "key": "C minor",<br>
+&nbsp;&nbsp;"sampler": "heun", "steps": 50, "cfg": 5.0, "shift": 3,<br>
+&nbsp;&nbsp;"lm": {"thinking": true, "temp": 0.85, "top_p": 0.9},<br>
+&nbsp;&nbsp;"dcw": {"enabled": true, "mode": "double", "scaler": 0.02},<br>
+&nbsp;&nbsp;"loras": [{"name": "psytrance_v2", "scale": 0.95, "sha256": "0c94..."}],<br>
+&nbsp;&nbsp;"seed": 9911,<br>
+&nbsp;&nbsp;"output_sha256": "9fbc...4071"<br>
+}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:24px">
+  <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Both look right — show Edit + Lyrics + Generate (refreshed) next</h3>
+      <p>Cover and Extend hierarchies + control depth are correct. Continue.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>Revise — tell me which control / section</h3>
+      <p>Reply in terminal with specifics. I'll redo a single section without re-pushing the whole thing.</p>
+    </div>
+  </div>
+</div>

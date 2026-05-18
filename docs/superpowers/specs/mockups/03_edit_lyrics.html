@@ -1,0 +1,517 @@
+<h2>Edit and Lyrics · everything expanded</h2>
+<p class="subtitle">Edit has two sub-modes — Repaint (segment regeneration) and Flow Morph (caption-to-caption transformation). Lyrics tab uses Qwen 2.5 7B Instruct to draft structurally-tagged lyrics for the song modes.</p>
+
+<style>
+  .gm { background:#0A0A0A; color:#E5E5E5; border:1px solid #1F1F1F; border-radius:10px; padding:18px; font-size:12px; line-height:1.5; margin-top:14px; }
+  .gm-header { display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; border-bottom:1px solid #1F1F1F; margin-bottom:14px; }
+  .gm-brand { font-size:15px; font-weight:600; }
+  .gm-cta { font-size:11px; color:#6B6B6B; }
+  .gm-cta strong { color:#E5E5E5; }
+  .gm-status { font-size:10px; color:#6B6B6B; letter-spacing:0.08em; text-transform:uppercase; }
+  .gm-row { display:flex; gap:16px; align-items:flex-start; }
+  .gm-sidebar { background:#000; padding:14px 10px; border-radius:6px; min-width:170px; }
+  .gm-side { display:block; padding:8px 10px; border-radius:4px; margin-bottom:3px; font-size:12px; color:#6B6B6B; }
+  .gm-side.active { background:#1A1A1A; color:#FFF; border-left:2px solid #FFF; padding-left:8px; }
+  .gm-side .em { margin-right:6px; }
+  .gm-main { flex:1; display:flex; gap:14px; align-items:flex-start; }
+  .gm-form { flex:1.3; background:#141414; padding:16px; border-radius:6px; }
+  .gm-output { flex:1; background:#141414; padding:16px; border-radius:6px; min-width:260px; }
+  .gm-label { font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:#6B6B6B; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; }
+  .gm-label .hint { color:#5A5048; font-size:9px; text-transform:none; letter-spacing:normal; font-weight:400; }
+  .gm-input { background:#000; border:1px solid #2A2A2A; padding:8px 10px; border-radius:4px; color:#E5E5E5; margin-bottom:12px; font-size:11px; }
+  .gm-textarea { min-height:46px; }
+  .gm-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+  .gm-grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:12px; }
+  .gm-grid4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; margin-bottom:12px; }
+  .gm-slider-row { display:flex; align-items:center; gap:10px; padding:6px 8px; background:#000; border:1px solid #2A2A2A; border-radius:4px; margin-bottom:8px; font-size:11px; }
+  .gm-slider-row .name { color:#6B6B6B; font-size:10px; min-width:130px; }
+  .gm-slider { flex:1; height:3px; background:#2A2A2A; border-radius:2px; position:relative; }
+  .gm-slider::after { content:""; position:absolute; top:-4px; width:10px; height:10px; background:#FFF; border-radius:50%; }
+  .gm-slider.p10::after { left:10%; }
+  .gm-slider.p20::after { left:20%; }
+  .gm-slider.p25::after { left:25%; }
+  .gm-slider.p33::after { left:33%; }
+  .gm-slider.p40::after { left:40%; }
+  .gm-slider.p50::after { left:50%; }
+  .gm-slider.p60::after { left:60%; }
+  .gm-slider.p70::after { left:70%; }
+  .gm-slider.p85::after { left:85%; }
+  .gm-slider.p95::after { left:95%; }
+  .gm-slider-row .val { color:#FFF; font-family:monospace; font-size:11px; min-width:42px; text-align:right; }
+  .gm-toggle { display:flex; align-items:center; gap:8px; padding:6px 10px; background:#000; border:1px solid #2A2A2A; border-radius:4px; margin-bottom:8px; font-size:11px; cursor:pointer; }
+  .gm-toggle .box { width:14px; height:14px; border:1px solid #2A2A2A; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; font-size:9px; }
+  .gm-toggle.on { color:#FFF; border-color:#FFF; }
+  .gm-toggle.on .box { background:#FFF; color:#0A0A0A; border-color:#FFF; }
+  .gm-pills { display:flex; gap:0; background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:2px; margin-bottom:12px; }
+  .gm-pill { flex:1; text-align:center; padding:6px 10px; font-size:11px; color:#6B6B6B; border-radius:3px; cursor:pointer; }
+  .gm-pill.on { background:#FFF; color:#0A0A0A; }
+  .gm-select { background:#000; border:1px solid #2A2A2A; padding:8px 10px; border-radius:4px; color:#E5E5E5; font-size:11px; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .gm-select .arrow { color:#6B6B6B; }
+  .gm-section { border:1px solid #2A2A2A; border-radius:4px; padding:14px; margin-top:14px; background:#0F0F0F; }
+  .gm-section.dim { opacity:0.4; }
+  .gm-section-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:11px; font-weight:600; }
+  .gm-section-h .arrow { color:#FFF; }
+  .gm-section-h .meta { color:#6B6B6B; font-weight:400; font-size:10px; }
+  .gm-chip { display:inline-block; padding:5px 10px; border-radius:14px; font-size:10px; margin-right:5px; margin-bottom:5px; background:#000; border:1px solid #2A2A2A; color:#6B6B6B; cursor:pointer; }
+  .gm-chip.on { border-color:#FFF; color:#FFF; }
+  .gm-chip.upload { border-style:dashed; color:#FFF; }
+  .gm-lora-row { display:flex; align-items:center; gap:10px; padding:8px 10px; background:#000; border:1px solid #2A2A2A; border-radius:4px; margin-bottom:6px; font-size:11px; }
+  .gm-lora-name { flex:1; }
+  .gm-lora-name small { color:#6B6B6B; font-weight:400; margin-left:4px; }
+  .gm-x { color:#6B6B6B; cursor:pointer; padding:0 4px; }
+  .gm-btn { background:#FFF; color:#0A0A0A; padding:12px 18px; border-radius:4px; font-weight:600; display:block; font-size:13px; text-align:center; cursor:pointer; margin-top:16px; }
+  .gm-dropzone { background:#000; border:2px dashed #2A2A2A; border-radius:6px; padding:14px; margin-bottom:12px; text-align:center; font-size:11px; color:#6B6B6B; }
+  .gm-dropzone.has-file { border-style:solid; border-color:#FFF; color:#FFF; text-align:left; padding:10px 12px; }
+  .gm-dropzone .filename { font-weight:600; }
+  .gm-dropzone .meta { color:#6B6B6B; font-size:9px; margin-top:2px; font-weight:400; }
+  .gm-dropzone .miniwave { height:18px; background:repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 3px); margin-top:6px; opacity:0.5; }
+  .gm-waveform { height:60px; background:#000; border:1px solid #2A2A2A; border-radius:4px; display:flex; align-items:center; justify-content:center; gap:2px; padding:8px; margin-bottom:10px; position:relative; }
+  .gm-bar { width:2px; background:#E5E5E5; }
+  .gm-bar.muted { opacity:0.35; }
+  .gm-bar.highlight { background:#FFF; }
+  .gm-player-controls { display:flex; align-items:center; gap:10px; color:#6B6B6B; font-size:10px; margin-bottom:14px; }
+  .gm-play { width:28px; height:28px; border-radius:50%; background:#FFF; color:#0A0A0A; display:flex; align-items:center; justify-content:center; font-size:11px; }
+  .gm-meta-block { background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:8px 10px; font-size:9px; color:#6B6B6B; font-family:monospace; line-height:1.6; max-height:160px; overflow:hidden; margin-top:8px; }
+  .gm-actions { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .gm-secondary { border:1px solid #2A2A2A; color:#E5E5E5; padding:6px 12px; border-radius:4px; font-size:10px; cursor:pointer; }
+  .gm-segment-bar { position:relative; height:18px; background:#0F0F0F; border:1px solid #2A2A2A; border-radius:3px; margin:8px 0 12px; }
+  .gm-segment-bar .sel { position:absolute; top:0; bottom:0; background:#FFF; opacity:0.85; }
+  .gm-segment-bar .ticks { position:absolute; top:0; left:0; right:0; bottom:0; display:flex; justify-content:space-between; padding:0 2px; align-items:center; font-size:8px; color:#6B6B6B; font-family:monospace; pointer-events:none; }
+  .gm-segment-bar .label { position:absolute; top:-14px; font-size:8px; color:#FFF; font-family:monospace; }
+
+  /* Lyrics-specific */
+  .gm-lyrics-output { background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:14px; margin-bottom:10px; font-family:Inter, system-ui, sans-serif; font-size:11px; line-height:1.7; color:#E5E5E5; min-height:240px; }
+  .gm-lyrics-output .section-tag { color:#FFF; font-weight:600; display:block; margin-top:10px; }
+  .gm-lyrics-output .section-tag:first-child { margin-top:0; }
+  .gm-lyrics-output .body { color:#B8B0A4; margin-left:0; }
+</style>
+
+
+<h3 style="margin-top:14px">✏️ Edit — fully expanded · Repaint sub-mode active</h3>
+
+<div class="gm">
+  <div class="gm-header">
+    <div>
+      <div class="gm-brand">ACE Music Studio<span style="color:#FFF">.</span></div>
+      <div class="gm-cta" style="margin-top:2px">Built with <span style="color:#FFF">♥</span>. <strong>Drop a like</strong> · Follow <strong>@techfreakworm</strong></div>
+    </div>
+    <div class="gm-status">ready · MPS · M5 Max</div>
+  </div>
+
+  <div class="gm-row">
+    <div class="gm-sidebar">
+      <div class="gm-side"><span class="em">🎵</span>Generate</div>
+      <div class="gm-side"><span class="em">🎤</span>Cover</div>
+      <div class="gm-side"><span class="em">⏩</span>Extend</div>
+      <div class="gm-side active"><span class="em">✏️</span>Edit</div>
+      <div class="gm-side"><span class="em">✍️</span>Lyrics</div>
+    </div>
+
+    <div class="gm-main">
+      <div class="gm-form">
+
+        <div class="gm-label">1 · Source audio <span class="hint">the song you want to modify · ≤ 240 s</span></div>
+        <div class="gm-dropzone has-file">
+          <div class="filename">↑ my_song_draft.wav</div>
+          <div class="meta">44.1 kHz · stereo · 2:30 · 26.4 MB · BPM 138 · key A minor</div>
+          <div class="miniwave"></div>
+        </div>
+
+        <div class="gm-label">2 · Edit sub-mode</div>
+        <div class="gm-pills">
+          <div class="gm-pill on">Repaint segment</div>
+          <div class="gm-pill">Flow morph</div>
+        </div>
+
+        <div class="gm-label">3 · Source lyrics <span class="hint">paste the existing lyrics for context</span></div>
+        <div class="gm-input gm-textarea">[verse 1] original lyric line one<br>[chorus] original chorus<br>[verse 2] original lyric line two<br>[bridge] ...</div>
+
+        <div class="gm-label">4 · Target lyrics <span class="hint">replace only the segment selected below</span></div>
+        <div class="gm-input gm-textarea">[chorus] new chorus replaces the old<br>more punchy, more melodic</div>
+
+        <div class="gm-label">5 · Segment selection <span class="hint">drag handles on the waveform · or set timestamps</span></div>
+        <div class="gm-segment-bar">
+          <div class="sel" style="left:33%; width:25%;"></div>
+          <div class="ticks"><span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span></div>
+          <div class="label" style="left:33%">0:50</div>
+          <div class="label" style="left:58%">1:30</div>
+        </div>
+        <div class="gm-grid2">
+          <div><div class="gm-label">Segment start</div><div class="gm-input" style="margin-bottom:0; font-family:monospace">50.0 s</div></div>
+          <div><div class="gm-label">Segment end</div><div class="gm-input" style="margin-bottom:0; font-family:monospace">90.0 s</div></div>
+        </div>
+
+        <!-- Repaint sub-options -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>Repaint options <span class="meta">· segment regeneration</span></span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Repaint mode</div><div class="gm-select">balanced <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">Chunk mask</div><div class="gm-select">auto <span class="arrow">▾</span></div></div>
+          </div>
+          <div class="gm-slider-row"><span class="name">Repaint strength</span><span class="gm-slider p50"></span><span class="val">0.50</span></div>
+          <div class="gm-slider-row"><span class="name">Latent crossfade frames</span><span class="gm-slider p20"></span><span class="val">10</span></div>
+          <div class="gm-slider-row"><span class="name">WAV crossfade seconds</span><span class="gm-slider p10"></span><span class="val">0.0</span></div>
+          <div class="gm-toggle on"><span class="box">✓</span> Preserve segment boundary phase</div>
+        </div>
+
+        <!-- Flow Morph sub-options, dimmed since Repaint is active -->
+        <div class="gm-section dim">
+          <div class="gm-section-h">
+            <span>Flow morph options <span class="meta">· caption-to-caption transformation · select "Flow morph" above to use</span></span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-label">Source caption <span class="hint">describes what the segment currently is</span></div>
+          <div class="gm-input">acoustic ballad, gentle piano</div>
+
+          <div class="gm-label">Target caption <span class="hint">what to morph it into · prompt above is reused</span></div>
+          <div class="gm-input" style="opacity:0.5">(uses style prompt from step 2)</div>
+
+          <div class="gm-grid3">
+            <div><div class="gm-label">n_min</div><div class="gm-input" style="margin-bottom:0">0.0</div></div>
+            <div><div class="gm-label">n_max</div><div class="gm-input" style="margin-bottom:0">1.0</div></div>
+            <div><div class="gm-label">n_avg</div><div class="gm-input" style="margin-bottom:0">1</div></div>
+          </div>
+          <div class="gm-toggle"><span class="box"></span> Enable flow_edit_morph</div>
+        </div>
+
+        <!-- LoRA section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h"><span>LoRA stack <span class="meta">· 1 active</span></span><span class="arrow">▾</span></div>
+          <div class="gm-label">Bundled presets</div>
+          <div style="margin-bottom:12px;">
+            <span class="gm-chip">RapMachine</span>
+            <span class="gm-chip">Chinese Rap</span>
+            <span class="gm-chip on">Lyric2Vocal</span>
+            <span class="gm-chip">Text2Samples</span>
+          </div>
+          <div class="gm-label">Active stack</div>
+          <div class="gm-lora-row">
+            <span class="gm-lora-name">Lyric2Vocal <small>· preset</small></span>
+            <span class="gm-slider p70" style="width:100px"></span>
+            <span class="val" style="color:#FFF; font-family:monospace; font-size:11px;">0.70</span>
+            <span class="gm-x">×</span>
+          </div>
+          <div style="margin-top:10px;">
+            <span class="gm-chip upload">↑ drop .safetensors here</span>
+          </div>
+        </div>
+
+        <!-- Advanced section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h"><span>Advanced</span><span class="arrow">▾</span></div>
+          <div class="gm-grid3">
+            <div><div class="gm-label">BPM <span class="hint">inherits from source</span></div><div class="gm-input" style="margin-bottom:0">138</div></div>
+            <div><div class="gm-label">Key / scale</div><div class="gm-input" style="margin-bottom:0">A minor</div></div>
+            <div><div class="gm-label">Time sig</div><div class="gm-input" style="margin-bottom:0">4 / 4</div></div>
+          </div>
+          <div class="gm-grid2">
+            <div><div class="gm-label">Sampler</div><div class="gm-select">heun <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">Vocal language</div><div class="gm-select">en <span class="arrow">▾</span></div></div>
+          </div>
+          <div class="gm-slider-row"><span class="name">Inference steps</span><span class="gm-slider p20"></span><span class="val">50</span></div>
+          <div class="gm-slider-row"><span class="name">CFG scale</span><span class="gm-slider p40"></span><span class="val">5.0</span></div>
+          <div class="gm-slider-row"><span class="name">Shift</span><span class="gm-slider p33"></span><span class="val">3</span></div>
+          <div class="gm-label" style="margin-top:8px">Negative prompt</div>
+          <div class="gm-input" style="font-size:10px; margin-bottom:8px">bitcrushed, aliasing, off-key</div>
+          <div class="gm-grid2">
+            <div><div class="gm-label">Audio format</div><div class="gm-pills"><div class="gm-pill on">mp3 320</div><div class="gm-pill">wav 44.1</div></div></div>
+            <div><div class="gm-label">Loudness</div><div class="gm-toggle on"><span class="box">✓</span> -14 LUFS</div></div>
+          </div>
+          <div class="gm-grid2">
+            <div><div class="gm-label">Seed</div><div class="gm-input" style="margin-bottom:0; font-family:monospace">7331</div></div>
+            <div><div class="gm-label">&nbsp;</div><div class="gm-toggle"><span class="box"></span> Lock seed</div></div>
+          </div>
+        </div>
+
+        <!-- LM planner -->
+        <div class="gm-section">
+          <div class="gm-section-h"><span>LM planner · Qwen3 thinking</span><span class="arrow">▾</span></div>
+          <div class="gm-toggle on"><span class="box">✓</span> Thinking enabled</div>
+          <div class="gm-toggle on"><span class="box">✓</span> Constrained decoding</div>
+          <div class="gm-grid4" style="margin-top:8px">
+            <div><div class="gm-label">Temp</div><div class="gm-input" style="margin-bottom:0">0.85</div></div>
+            <div><div class="gm-label">Top-k</div><div class="gm-input" style="margin-bottom:0">0</div></div>
+            <div><div class="gm-label">Top-p</div><div class="gm-input" style="margin-bottom:0">0.90</div></div>
+            <div><div class="gm-label">LM CFG</div><div class="gm-input" style="margin-bottom:0">2</div></div>
+          </div>
+          <div class="gm-label">CoT toggles</div>
+          <div class="gm-grid4">
+            <div class="gm-toggle"><span class="box"></span> metas</div>
+            <div class="gm-toggle"><span class="box"></span> caption</div>
+            <div class="gm-toggle on"><span class="box">✓</span> lyrics</div>
+            <div class="gm-toggle"><span class="box"></span> language</div>
+          </div>
+        </div>
+
+        <!-- DCW -->
+        <div class="gm-section">
+          <div class="gm-section-h"><span>DCW · dynamic CFG warping</span><span class="arrow">▾</span></div>
+          <div class="gm-toggle on"><span class="box">✓</span> DCW enabled</div>
+          <div class="gm-grid2">
+            <div><div class="gm-label">Mode</div><div class="gm-select">double <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">Wavelet</div><div class="gm-select">haar <span class="arrow">▾</span></div></div>
+          </div>
+          <div class="gm-slider-row"><span class="name">DCW scaler</span><span class="gm-slider p10"></span><span class="val">0.02</span></div>
+          <div class="gm-slider-row"><span class="name">High scaler</span><span class="gm-slider p10"></span><span class="val">0.06</span></div>
+        </div>
+
+        <div class="gm-btn">▶ Repaint segment 0:50 – 1:30 · est. ~25 s on M5 Max</div>
+      </div>
+
+      <!-- Output -->
+      <div class="gm-output">
+        <div class="gm-label" style="margin-bottom:10px">Output · edited · 2:30 · seed 7331 · segment 0:50 – 1:30</div>
+
+        <div class="gm-toggle on"><span class="box">✓</span> Show edited region (highlighted on waveform)</div>
+
+        <div class="gm-waveform">
+          <div class="gm-bar muted" style="height:32%"></div>
+          <div class="gm-bar muted" style="height:48%"></div>
+          <div class="gm-bar muted" style="height:60%"></div>
+          <div class="gm-bar muted" style="height:42%"></div>
+          <div class="gm-bar muted" style="height:54%"></div>
+          <div class="gm-bar highlight" style="height:78%"></div>
+          <div class="gm-bar highlight" style="height:92%"></div>
+          <div class="gm-bar highlight" style="height:84%"></div>
+          <div class="gm-bar highlight" style="height:70%"></div>
+          <div class="gm-bar highlight" style="height:88%"></div>
+          <div class="gm-bar highlight" style="height:62%"></div>
+          <div class="gm-bar muted" style="height:48%"></div>
+          <div class="gm-bar muted" style="height:36%"></div>
+          <div class="gm-bar muted" style="height:42%"></div>
+          <div class="gm-bar muted" style="height:30%"></div>
+          <div class="gm-bar muted" style="height:38%"></div>
+        </div>
+
+        <div class="gm-player-controls">
+          <span class="gm-play">▶</span>
+          <span>0:00 / 2:30</span>
+          <span style="margin-left:auto; cursor:pointer; color:#FFF">↻ retake segment</span>
+        </div>
+
+        <div class="gm-label">A / B comparison</div>
+        <div class="gm-grid2">
+          <div class="gm-secondary" style="text-align:center">▶ original</div>
+          <div class="gm-secondary" style="text-align:center; border-color:#FFF; color:#FFF">▶ edited</div>
+        </div>
+
+        <div class="gm-label" style="margin-top:10px">Stems · Demucs</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:10px;">
+          <div style="background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:6px 10px; font-size:10px; display:flex; justify-content:space-between;"><span>vocals</span><span style="color:#FFF">↓</span></div>
+          <div style="background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:6px 10px; font-size:10px; display:flex; justify-content:space-between;"><span>drums</span><span style="color:#FFF">↓</span></div>
+          <div style="background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:6px 10px; font-size:10px; display:flex; justify-content:space-between;"><span>bass</span><span style="color:#FFF">↓</span></div>
+          <div style="background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:6px 10px; font-size:10px; display:flex; justify-content:space-between;"><span>other</span><span style="color:#FFF">↓</span></div>
+        </div>
+
+        <div class="gm-label">Export</div>
+        <div class="gm-actions">
+          <span class="gm-secondary">↓ full mp3</span>
+          <span class="gm-secondary">↓ segment-only mp3</span>
+          <span class="gm-secondary">↓ wav</span>
+          <span class="gm-secondary">↓ stems zip</span>
+          <span class="gm-secondary">{ } meta</span>
+        </div>
+
+        <div class="gm-label" style="margin-top:14px">Metadata</div>
+        <div class="gm-meta-block">
+{<br>
+&nbsp;&nbsp;"mode": "edit", "sub_mode": "repaint",<br>
+&nbsp;&nbsp;"source_audio_sha256": "1a4f...8e7d",<br>
+&nbsp;&nbsp;"segment_start_s": 50.0, "segment_end_s": 90.0,<br>
+&nbsp;&nbsp;"repaint_mode": "balanced", "repaint_strength": 0.5,<br>
+&nbsp;&nbsp;"latent_crossfade_frames": 10, "wav_crossfade_s": 0.0,<br>
+&nbsp;&nbsp;"chunk_mask_mode": "auto",<br>
+&nbsp;&nbsp;"source_lyrics_hash": "3c2e...44ab",<br>
+&nbsp;&nbsp;"target_lyrics_first_line": "[chorus] new chorus replaces the old...",<br>
+&nbsp;&nbsp;"bpm": 138, "key": "A minor", "sampler": "heun", "steps": 50,<br>
+&nbsp;&nbsp;"loras": [{"name": "Lyric2Vocal", "scale": 0.7}],<br>
+&nbsp;&nbsp;"seed": 7331,<br>
+&nbsp;&nbsp;"output_sha256": "b7a2...c019"<br>
+}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<h3 style="margin-top:30px">✍️ Lyrics — fully expanded · Qwen 2.5 7B Instruct</h3>
+
+<div class="gm">
+  <div class="gm-header">
+    <div>
+      <div class="gm-brand">ACE Music Studio<span style="color:#FFF">.</span></div>
+      <div class="gm-cta" style="margin-top:2px">Built with <span style="color:#FFF">♥</span>. <strong>Drop a like</strong> · Follow <strong>@techfreakworm</strong></div>
+    </div>
+    <div class="gm-status">ready · MPS · M5 Max · Qwen 2.5 7B</div>
+  </div>
+
+  <div class="gm-row">
+    <div class="gm-sidebar">
+      <div class="gm-side"><span class="em">🎵</span>Generate</div>
+      <div class="gm-side"><span class="em">🎤</span>Cover</div>
+      <div class="gm-side"><span class="em">⏩</span>Extend</div>
+      <div class="gm-side"><span class="em">✏️</span>Edit</div>
+      <div class="gm-side active"><span class="em">✍️</span>Lyrics</div>
+    </div>
+
+    <div class="gm-main">
+      <div class="gm-form">
+
+        <div class="gm-label">1 · Brief <span class="hint">describe the song in plain language</span></div>
+        <div class="gm-input gm-textarea" style="min-height:80px">A driving psytrance anthem about losing yourself on the dancefloor at sunrise. First-person, present tense, references to lights, kick drum, transcendence. Avoid clichés like "feel the beat".</div>
+
+        <div class="gm-grid2">
+          <div>
+            <div class="gm-label">Target structure <span class="hint">section sequence</span></div>
+            <div class="gm-input" style="margin-bottom:0">intro, verse, chorus, verse, chorus, bridge, chorus, outro</div>
+          </div>
+          <div>
+            <div class="gm-label">Language</div>
+            <div class="gm-select" style="margin-bottom:0">English (en) <span class="arrow">▾</span></div>
+          </div>
+        </div>
+
+        <div class="gm-grid3">
+          <div>
+            <div class="gm-label">Verse lines</div>
+            <div class="gm-input" style="margin-bottom:0">6</div>
+          </div>
+          <div>
+            <div class="gm-label">Chorus lines</div>
+            <div class="gm-input" style="margin-bottom:0">4</div>
+          </div>
+          <div>
+            <div class="gm-label">Bridge lines</div>
+            <div class="gm-input" style="margin-bottom:0">2</div>
+          </div>
+        </div>
+
+        <div class="gm-label">Tone / mood <span class="hint">optional · comma-separated descriptors</span></div>
+        <div class="gm-input">euphoric, hypnotic, transcendent, not cheesy</div>
+
+        <div class="gm-label">Rhyme preference</div>
+        <div class="gm-pills">
+          <div class="gm-pill">Strict (AABB)</div>
+          <div class="gm-pill on">Loose (ABAB / free)</div>
+          <div class="gm-pill">None</div>
+        </div>
+
+        <!-- LM parameters, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>LM parameters <span class="meta">· Qwen 2.5 7B Instruct (Apache 2.0)</span></span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-grid4">
+            <div><div class="gm-label">Temperature</div><div class="gm-input" style="margin-bottom:0">0.85</div></div>
+            <div><div class="gm-label">Top-p</div><div class="gm-input" style="margin-bottom:0">0.90</div></div>
+            <div><div class="gm-label">Top-k</div><div class="gm-input" style="margin-bottom:0">40</div></div>
+            <div><div class="gm-label">Rep. penalty</div><div class="gm-input" style="margin-bottom:0">1.10</div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Max new tokens</div><div class="gm-input" style="margin-bottom:0">600</div></div>
+            <div><div class="gm-label">Seed</div><div class="gm-input" style="margin-bottom:0; font-family:monospace">42</div></div>
+          </div>
+
+          <div class="gm-toggle"><span class="box"></span> Show system prompt</div>
+          <div class="gm-toggle on"><span class="box">✓</span> Enforce structural-tag format <span style="color:#6B6B6B; font-size:9px; margin-left:auto">stop at [end]</span></div>
+        </div>
+
+        <div class="gm-btn">▶ Draft lyrics · est. ~8 s on M5 Max</div>
+      </div>
+
+      <!-- Lyrics output -->
+      <div class="gm-output">
+        <div class="gm-label" style="margin-bottom:10px">Draft · 1 of 1 · 312 tokens · 6.2 s</div>
+
+        <div class="gm-lyrics-output">
+          <span class="section-tag">[intro]</span>
+          <span class="body">the lights start low, the bass starts slow<br>another night, another holy show</span>
+
+          <span class="section-tag">[verse 1]</span>
+          <span class="body">six in the morning, the sun's still pretending<br>kick drum carries what the night was sending<br>shoes off, eyes closed, the city's still bending<br>no one's here for an ending<br>just one more lift, one more descending<br>the room is breathing, the floor is mending</span>
+
+          <span class="section-tag">[chorus]</span>
+          <span class="body">we let go, we let go, we let go<br>oh the morning, oh the morning<br>arms up, head down, no warning<br>we let go, we let go, we let go</span>
+
+          <span class="section-tag">[verse 2]</span>
+          <span class="body">...</span>
+
+          <span class="section-tag">[bridge]</span>
+          <span class="body">...</span>
+
+          <span class="section-tag">[outro]</span>
+          <span class="body">...</span>
+        </div>
+
+        <div class="gm-actions" style="margin-bottom:14px">
+          <span class="gm-secondary" style="border-color:#FFF; color:#FFF">↑ Use these in Generate</span>
+          <span class="gm-secondary">↻ regenerate</span>
+          <span class="gm-secondary">↻ continue from cursor</span>
+          <span class="gm-secondary">✎ edit inline</span>
+          <span class="gm-secondary">↓ .txt</span>
+        </div>
+
+        <div class="gm-label">Quick refinements <span class="hint">click to apply to next regeneration</span></div>
+        <div style="margin-bottom:14px;">
+          <span class="gm-chip">more cryptic</span>
+          <span class="gm-chip">less rhyme</span>
+          <span class="gm-chip">more concrete imagery</span>
+          <span class="gm-chip">shorter lines</span>
+          <span class="gm-chip">add chorus hook</span>
+        </div>
+
+        <div class="gm-label">Variants</div>
+        <div class="gm-grid2">
+          <div class="gm-secondary" style="text-align:center; border-color:#FFF; color:#FFF">v1 · current</div>
+          <div class="gm-secondary" style="text-align:center">+ generate v2</div>
+        </div>
+
+        <div class="gm-label" style="margin-top:14px">Metadata</div>
+        <div class="gm-meta-block">
+{<br>
+&nbsp;&nbsp;"mode": "lyrics",<br>
+&nbsp;&nbsp;"model": "Qwen2.5-7B-Instruct",<br>
+&nbsp;&nbsp;"brief_first_line": "A driving psytrance anthem about losing yourself...",<br>
+&nbsp;&nbsp;"structure": ["intro", "verse", "chorus", "verse", "chorus", "bridge", "chorus", "outro"],<br>
+&nbsp;&nbsp;"language": "en",<br>
+&nbsp;&nbsp;"tone": "euphoric, hypnotic, transcendent, not cheesy",<br>
+&nbsp;&nbsp;"verse_lines": 6, "chorus_lines": 4, "bridge_lines": 2,<br>
+&nbsp;&nbsp;"rhyme_preference": "loose",<br>
+&nbsp;&nbsp;"temperature": 0.85, "top_p": 0.9, "top_k": 40,<br>
+&nbsp;&nbsp;"repetition_penalty": 1.1, "max_new_tokens": 600,<br>
+&nbsp;&nbsp;"seed": 42,<br>
+&nbsp;&nbsp;"tokens_generated": 312, "wall_seconds": 6.2,<br>
+&nbsp;&nbsp;"output_sha256": "f1a3...88e2"<br>
+}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="options" style="margin-top:24px">
+  <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Both look right — refresh Generate next, then mobile + error states</h3>
+      <p>Edit (with both sub-modes visible) and Lyrics (with LM params + quick-refinement chips) work. Continue.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>Revise — tell me which control or section</h3>
+      <p>Reply in terminal with specifics.</p>
+    </div>
+  </div>
+</div>

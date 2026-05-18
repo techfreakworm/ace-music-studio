@@ -1,0 +1,604 @@
+<h2>Generate fully expanded · mobile · error states</h2>
+<p class="subtitle">Last batch. Generate tab with every control surfaced. Mobile phone screens for Generate + Cover + Lyrics. Six error/edge-case states.</p>
+
+<style>
+  .gm { background:#0A0A0A; color:#E5E5E5; border:1px solid #1F1F1F; border-radius:10px; padding:18px; font-size:12px; line-height:1.5; margin-top:14px; }
+  .gm-header { display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; border-bottom:1px solid #1F1F1F; margin-bottom:14px; }
+  .gm-brand { font-size:15px; font-weight:600; }
+  .gm-cta { font-size:11px; color:#6B6B6B; }
+  .gm-cta strong { color:#E5E5E5; }
+  .gm-status { font-size:10px; color:#6B6B6B; letter-spacing:0.08em; text-transform:uppercase; }
+  .gm-row { display:flex; gap:16px; align-items:flex-start; }
+  .gm-sidebar { background:#000; padding:14px 10px; border-radius:6px; min-width:170px; }
+  .gm-side { display:block; padding:8px 10px; border-radius:4px; margin-bottom:3px; font-size:12px; color:#6B6B6B; }
+  .gm-side.active { background:#1A1A1A; color:#FFF; border-left:2px solid #FFF; padding-left:8px; }
+  .gm-side .em { margin-right:6px; }
+  .gm-main { flex:1; display:flex; gap:14px; align-items:flex-start; }
+  .gm-form { flex:1.3; background:#141414; padding:16px; border-radius:6px; }
+  .gm-output { flex:1; background:#141414; padding:16px; border-radius:6px; min-width:260px; }
+  .gm-label { font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:#6B6B6B; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; }
+  .gm-label .hint { color:#5A5048; font-size:9px; text-transform:none; letter-spacing:normal; font-weight:400; }
+  .gm-input { background:#000; border:1px solid #2A2A2A; padding:8px 10px; border-radius:4px; color:#E5E5E5; margin-bottom:12px; font-size:11px; }
+  .gm-textarea { min-height:46px; }
+  .gm-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+  .gm-grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:12px; }
+  .gm-grid4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; margin-bottom:12px; }
+  .gm-slider-row { display:flex; align-items:center; gap:10px; padding:6px 8px; background:#000; border:1px solid #2A2A2A; border-radius:4px; margin-bottom:8px; font-size:11px; }
+  .gm-slider-row .name { color:#6B6B6B; font-size:10px; min-width:130px; }
+  .gm-slider { flex:1; height:3px; background:#2A2A2A; border-radius:2px; position:relative; }
+  .gm-slider::after { content:""; position:absolute; top:-4px; width:10px; height:10px; background:#FFF; border-radius:50%; }
+  .gm-slider.p5::after { left:5%; }
+  .gm-slider.p10::after { left:10%; }
+  .gm-slider.p15::after { left:15%; }
+  .gm-slider.p20::after { left:20%; }
+  .gm-slider.p25::after { left:25%; }
+  .gm-slider.p33::after { left:33%; }
+  .gm-slider.p40::after { left:40%; }
+  .gm-slider.p50::after { left:50%; }
+  .gm-slider.p60::after { left:60%; }
+  .gm-slider.p65::after { left:65%; }
+  .gm-slider.p70::after { left:70%; }
+  .gm-slider.p85::after { left:85%; }
+  .gm-slider.p90::after { left:90%; }
+  .gm-slider.p95::after { left:95%; }
+  .gm-slider-row .val { color:#FFF; font-family:monospace; font-size:11px; min-width:42px; text-align:right; }
+  .gm-toggle { display:flex; align-items:center; gap:8px; padding:6px 10px; background:#000; border:1px solid #2A2A2A; border-radius:4px; margin-bottom:8px; font-size:11px; cursor:pointer; }
+  .gm-toggle .box { width:14px; height:14px; border:1px solid #2A2A2A; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; font-size:9px; }
+  .gm-toggle.on { color:#FFF; border-color:#FFF; }
+  .gm-toggle.on .box { background:#FFF; color:#0A0A0A; border-color:#FFF; }
+  .gm-pills { display:flex; gap:0; background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:2px; margin-bottom:12px; }
+  .gm-pill { flex:1; text-align:center; padding:6px 10px; font-size:11px; color:#6B6B6B; border-radius:3px; cursor:pointer; }
+  .gm-pill.on { background:#FFF; color:#0A0A0A; }
+  .gm-select { background:#000; border:1px solid #2A2A2A; padding:8px 10px; border-radius:4px; color:#E5E5E5; font-size:11px; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .gm-select .arrow { color:#6B6B6B; }
+  .gm-section { border:1px solid #2A2A2A; border-radius:4px; padding:14px; margin-top:14px; background:#0F0F0F; }
+  .gm-section-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:11px; font-weight:600; }
+  .gm-section-h .arrow { color:#FFF; }
+  .gm-section-h .meta { color:#6B6B6B; font-weight:400; font-size:10px; }
+  .gm-chip { display:inline-block; padding:5px 10px; border-radius:14px; font-size:10px; margin-right:5px; margin-bottom:5px; background:#000; border:1px solid #2A2A2A; color:#6B6B6B; cursor:pointer; }
+  .gm-chip.on { border-color:#FFF; color:#FFF; }
+  .gm-chip.upload { border-style:dashed; color:#FFF; }
+  .gm-lora-row { display:flex; align-items:center; gap:10px; padding:8px 10px; background:#000; border:1px solid #2A2A2A; border-radius:4px; margin-bottom:6px; font-size:11px; }
+  .gm-lora-name { flex:1; }
+  .gm-lora-name small { color:#6B6B6B; font-weight:400; margin-left:4px; }
+  .gm-x { color:#6B6B6B; cursor:pointer; padding:0 4px; }
+  .gm-btn { background:#FFF; color:#0A0A0A; padding:12px 18px; border-radius:4px; font-weight:600; display:block; font-size:13px; text-align:center; cursor:pointer; margin-top:16px; }
+  .gm-waveform { height:60px; background:#000; border:1px solid #2A2A2A; border-radius:4px; display:flex; align-items:center; justify-content:center; gap:2px; padding:8px; margin-bottom:10px; }
+  .gm-bar { width:2px; background:#E5E5E5; }
+  .gm-player-controls { display:flex; align-items:center; gap:10px; color:#6B6B6B; font-size:10px; margin-bottom:14px; }
+  .gm-play { width:28px; height:28px; border-radius:50%; background:#FFF; color:#0A0A0A; display:flex; align-items:center; justify-content:center; font-size:11px; }
+  .gm-meta-block { background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:8px 10px; font-size:9px; color:#6B6B6B; font-family:monospace; line-height:1.6; max-height:160px; overflow:hidden; margin-top:8px; }
+  .gm-actions { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .gm-secondary { border:1px solid #2A2A2A; color:#E5E5E5; padding:6px 12px; border-radius:4px; font-size:10px; cursor:pointer; }
+  .gm-stems { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:10px; }
+  .gm-stem { background:#000; border:1px solid #2A2A2A; border-radius:4px; padding:6px 10px; font-size:10px; display:flex; justify-content:space-between; align-items:center; }
+  .gm-stem .dl { color:#FFF; cursor:pointer; }
+</style>
+
+
+<h3 style="margin-top:14px">🎵 Generate — fully expanded · psytrance preset stacked with custom LoRA</h3>
+
+<div class="gm">
+  <div class="gm-header">
+    <div>
+      <div class="gm-brand">ACE Music Studio<span style="color:#FFF">.</span></div>
+      <div class="gm-cta" style="margin-top:2px">Built with <span style="color:#FFF">♥</span>. <strong>Drop a like</strong> · Follow <strong>@techfreakworm</strong> for what's next.</div>
+    </div>
+    <div class="gm-status">ready · MPS · M5 Max</div>
+  </div>
+
+  <div class="gm-row">
+    <div class="gm-sidebar">
+      <div class="gm-side active"><span class="em">🎵</span>Generate</div>
+      <div class="gm-side"><span class="em">🎤</span>Cover</div>
+      <div class="gm-side"><span class="em">⏩</span>Extend</div>
+      <div class="gm-side"><span class="em">✏️</span>Edit</div>
+      <div class="gm-side"><span class="em">✍️</span>Lyrics</div>
+      <div style="border-top:1px solid #1F1F1F; margin:14px 0 10px; padding-top:10px; font-size:9px; color:#6B6B6B; text-transform:uppercase; letter-spacing:0.1em;">History · session</div>
+      <div style="font-size:10px; color:#6B6B6B; padding:4px 8px;">▶ psytrance · just now</div>
+      <div style="font-size:10px; color:#6B6B6B; padding:4px 8px;">▶ ambient_v4 · 2m</div>
+      <div style="font-size:10px; color:#6B6B6B; padding:4px 8px;">▶ chinese_rap · 7m</div>
+      <div style="font-size:10px; color:#6B6B6B; padding:4px 8px;">▶ lofi_vocal · 14m</div>
+    </div>
+
+    <div class="gm-main">
+      <div class="gm-form">
+
+        <div class="gm-label">1 · Style prompt <span class="hint">describe the song · genre, instruments, mood</span></div>
+        <div class="gm-input">psytrance, rolling triplet bassline, acid squelch, metallic leads, atmospheric pads, high quality</div>
+
+        <div class="gm-label">2 · Lyrics <span class="hint">use [verse] [chorus] [bridge] tags · ↗ open Lyrics tab to draft with Qwen 2.5</span></div>
+        <div class="gm-input gm-textarea" style="min-height:64px">[intro - atmospheric pads &amp; ambient synth]<br><br>[verse 1] six in the morning, the sun's still pretending<br>kick drum carries what the night was sending<br>shoes off, eyes closed, the city's still bending<br><br>[chorus] we let go, we let go, we let go</div>
+
+        <div class="gm-grid2">
+          <div>
+            <div class="gm-label">Duration <span class="hint">5 – 240 s</span></div>
+            <div class="gm-slider-row"><span class="name">seconds</span><span class="gm-slider p15"></span><span class="val">30</span></div>
+          </div>
+          <div>
+            <div class="gm-label">Vocal mode</div>
+            <div class="gm-pills">
+              <div class="gm-pill on">With vocals</div>
+              <div class="gm-pill">Instrumental</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LoRA section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>LoRA stack <span class="meta">· 2 active · order matters</span></span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-label">Bundled presets <span class="hint">click to toggle</span></div>
+          <div style="margin-bottom:12px;">
+            <span class="gm-chip">RapMachine</span>
+            <span class="gm-chip">Chinese Rap</span>
+            <span class="gm-chip on">Lyric2Vocal</span>
+            <span class="gm-chip">Text2Samples</span>
+          </div>
+
+          <div class="gm-label">Active stack <span class="hint">↑↓ to reorder · × to remove</span></div>
+          <div class="gm-lora-row">
+            <span class="gm-lora-name">Lyric2Vocal <small>· preset · 28 MB</small></span>
+            <span class="gm-slider p65" style="width:100px"></span>
+            <span class="val" style="color:#FFF; font-family:monospace; font-size:11px;">0.65</span>
+            <span class="gm-x">×</span>
+          </div>
+          <div class="gm-lora-row">
+            <span class="gm-lora-name">psytrance_v2 <small>· custom · 47 MB · rank 64 · sha 0c94…</small></span>
+            <span class="gm-slider p95" style="width:100px"></span>
+            <span class="val" style="color:#FFF; font-family:monospace; font-size:11px;">0.95</span>
+            <span class="gm-x">×</span>
+          </div>
+
+          <div style="margin-top:10px;">
+            <span class="gm-chip upload">↑ drop .safetensors here or click</span>
+          </div>
+        </div>
+
+        <!-- Advanced section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>Advanced <span class="meta">· generation parameters</span></span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-grid3">
+            <div><div class="gm-label">BPM</div><div class="gm-input" style="margin-bottom:0">135</div></div>
+            <div><div class="gm-label">Key / scale</div><div class="gm-input" style="margin-bottom:0">auto</div></div>
+            <div><div class="gm-label">Time signature</div><div class="gm-input" style="margin-bottom:0">4 / 4</div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Sampler</div><div class="gm-select">heun <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">Vocal language</div><div class="gm-select">auto <span class="arrow">▾</span></div></div>
+          </div>
+
+          <div class="gm-slider-row"><span class="name">Inference steps</span><span class="gm-slider p25"></span><span class="val">50</span></div>
+          <div class="gm-slider-row"><span class="name">CFG scale</span><span class="gm-slider p40"></span><span class="val">5.0</span></div>
+          <div class="gm-slider-row"><span class="name">Shift</span><span class="gm-slider p33"></span><span class="val">3</span></div>
+          <div class="gm-slider-row"><span class="name">CFG interval start</span><span class="gm-slider p5"></span><span class="val">0.0</span></div>
+          <div class="gm-slider-row"><span class="name">CFG interval end</span><span class="gm-slider p95"></span><span class="val">1.0</span></div>
+
+          <div class="gm-label" style="margin-top:8px">Negative prompt <span class="hint">things to avoid</span></div>
+          <div class="gm-input gm-textarea" style="font-size:10px">bitcrushed, aliasing, quantizing noise, digital clipping, glitchy, mp3 artifacts, jazz, funk, pop, acoustic, lo-fi, orchestral, dubstep, vocal hooks, electric guitar, slow tempo, jazz chords, blues scale</div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Audio format</div><div class="gm-pills"><div class="gm-pill on">mp3 320</div><div class="gm-pill">wav 44.1</div></div></div>
+            <div><div class="gm-label">Loudness</div><div class="gm-toggle on"><span class="box">✓</span> -14 LUFS</div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Fade in</div><div class="gm-slider-row"><span class="name">seconds</span><span class="gm-slider p5"></span><span class="val">0.0</span></div></div>
+            <div><div class="gm-label">Fade out</div><div class="gm-slider-row"><span class="name">seconds</span><span class="gm-slider p5"></span><span class="val">0.0</span></div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Latent shift</div><div class="gm-input" style="margin-bottom:0">0</div></div>
+            <div><div class="gm-label">Latent rescale</div><div class="gm-input" style="margin-bottom:0">1</div></div>
+          </div>
+
+          <div class="gm-grid2">
+            <div><div class="gm-label">Seed</div><div class="gm-input" style="margin-bottom:0; font-family:monospace">1297183202</div></div>
+            <div><div class="gm-label">&nbsp;</div><div class="gm-toggle"><span class="box"></span> Lock seed</div></div>
+          </div>
+        </div>
+
+        <!-- LM planner section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>LM planner · Qwen3 thinking <span class="meta">· chain-of-thought structure</span></span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-toggle on"><span class="box">✓</span> Thinking enabled <span style="color:#6B6B6B; font-size:9px; margin-left:auto">+ slower but better structure</span></div>
+          <div class="gm-toggle on"><span class="box">✓</span> Constrained decoding</div>
+
+          <div class="gm-grid4" style="margin-top:8px">
+            <div><div class="gm-label">Temperature</div><div class="gm-input" style="margin-bottom:0">0.85</div></div>
+            <div><div class="gm-label">Top-k</div><div class="gm-input" style="margin-bottom:0">0</div></div>
+            <div><div class="gm-label">Top-p</div><div class="gm-input" style="margin-bottom:0">0.90</div></div>
+            <div><div class="gm-label">LM CFG</div><div class="gm-input" style="margin-bottom:0">2</div></div>
+          </div>
+
+          <div class="gm-label">CoT pipeline toggles <span class="hint">which fields the LM rewrites pre-generation</span></div>
+          <div class="gm-grid4">
+            <div class="gm-toggle"><span class="box"></span> metas</div>
+            <div class="gm-toggle"><span class="box"></span> caption</div>
+            <div class="gm-toggle"><span class="box"></span> lyrics</div>
+            <div class="gm-toggle"><span class="box"></span> language</div>
+          </div>
+
+          <div class="gm-label">LM negative prompt</div>
+          <div class="gm-input" style="font-size:10px">happy chords, major scale, uplifting melody</div>
+
+          <div class="gm-label">CoT override fields <span class="hint">if a CoT toggle is on, the LM rewrites these</span></div>
+          <div class="gm-grid2">
+            <div><div class="gm-label">cot_bpm</div><div class="gm-input" style="margin-bottom:0; opacity:0.5">(blank → use main BPM)</div></div>
+            <div><div class="gm-label">cot_keyscale</div><div class="gm-input" style="margin-bottom:0; opacity:0.5">(blank → use main key)</div></div>
+          </div>
+        </div>
+
+        <!-- DCW section, expanded -->
+        <div class="gm-section">
+          <div class="gm-section-h">
+            <span>DCW · dynamic CFG warping <span class="meta">· wavelet-based</span></span>
+            <span class="arrow">▾</span>
+          </div>
+
+          <div class="gm-toggle on"><span class="box">✓</span> DCW enabled</div>
+
+          <div class="gm-grid3">
+            <div><div class="gm-label">Mode</div><div class="gm-select">double <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">Wavelet</div><div class="gm-select">haar <span class="arrow">▾</span></div></div>
+            <div><div class="gm-label">&nbsp;</div><div style="font-size:9px; color:#6B6B6B; padding-top:8px;">leave defaults if unsure</div></div>
+          </div>
+
+          <div class="gm-slider-row"><span class="name">DCW scaler</span><span class="gm-slider p5"></span><span class="val">0.02</span></div>
+          <div class="gm-slider-row"><span class="name">High scaler</span><span class="gm-slider p10"></span><span class="val">0.06</span></div>
+        </div>
+
+        <div class="gm-btn">▶ Generate · est. ~30 s on M5 Max</div>
+      </div>
+
+      <!-- Output panel -->
+      <div class="gm-output">
+        <div class="gm-label" style="margin-bottom:10px">Output · psytrance · 30 s · seed 1297183202</div>
+
+        <div class="gm-waveform">
+          <div class="gm-bar" style="height:18%"></div><div class="gm-bar" style="height:32%"></div><div class="gm-bar" style="height:54%"></div><div class="gm-bar" style="height:72%"></div><div class="gm-bar" style="height:88%"></div><div class="gm-bar" style="height:62%"></div><div class="gm-bar" style="height:42%"></div><div class="gm-bar" style="height:78%"></div><div class="gm-bar" style="height:92%"></div><div class="gm-bar" style="height:66%"></div><div class="gm-bar" style="height:48%"></div><div class="gm-bar" style="height:30%"></div><div class="gm-bar" style="height:58%"></div><div class="gm-bar" style="height:80%"></div><div class="gm-bar" style="height:70%"></div><div class="gm-bar" style="height:44%"></div><div class="gm-bar" style="height:24%"></div><div class="gm-bar" style="height:50%"></div>
+        </div>
+
+        <div class="gm-player-controls">
+          <span class="gm-play">▶</span>
+          <span>0:00 / 0:30</span>
+          <span style="margin-left:auto; cursor:pointer; color:#FFF">↻ retake · new seed</span>
+        </div>
+
+        <div class="gm-label">Stems · Demucs htdemucs_ft</div>
+        <div class="gm-stems">
+          <div class="gm-stem"><span>vocals · 1.8 MB</span><span class="dl">↓</span></div>
+          <div class="gm-stem"><span>drums · 1.6 MB</span><span class="dl">↓</span></div>
+          <div class="gm-stem"><span>bass · 1.4 MB</span><span class="dl">↓</span></div>
+          <div class="gm-stem"><span>other · 1.7 MB</span><span class="dl">↓</span></div>
+        </div>
+
+        <div class="gm-label">Export</div>
+        <div class="gm-actions">
+          <span class="gm-secondary">↓ mp3 · 1.2 MB</span>
+          <span class="gm-secondary">↓ wav · 5.3 MB</span>
+          <span class="gm-secondary">↓ stems zip</span>
+          <span class="gm-secondary">{ } meta</span>
+          <span class="gm-secondary">↗ share</span>
+        </div>
+
+        <div class="gm-label" style="margin-top:14px">Metadata</div>
+        <div class="gm-meta-block">
+{<br>
+&nbsp;&nbsp;"mode": "generate",<br>
+&nbsp;&nbsp;"prompt": "psytrance, rolling triplet bassline...",<br>
+&nbsp;&nbsp;"lyrics_first_line": "[intro - atmospheric pads...",<br>
+&nbsp;&nbsp;"duration_s": 30, "instrumental": false,<br>
+&nbsp;&nbsp;"bpm": 135, "key": "auto", "time_sig": "4/4",<br>
+&nbsp;&nbsp;"sampler": "heun", "steps": 50, "cfg": 5.0, "shift": 3,<br>
+&nbsp;&nbsp;"cfg_interval": [0.0, 1.0],<br>
+&nbsp;&nbsp;"lm": {"thinking": true, "temp": 0.85, "top_p": 0.9, "cfg": 2,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"cot": {"metas":false,"caption":false,"lyrics":false,"language":false}},<br>
+&nbsp;&nbsp;"dcw": {"enabled":true,"mode":"double","scaler":0.02,"high_scaler":0.06,"wavelet":"haar"},<br>
+&nbsp;&nbsp;"loras": [<br>
+&nbsp;&nbsp;&nbsp;&nbsp;{"name":"Lyric2Vocal","scale":0.65,"sha256":"7e1f..."},<br>
+&nbsp;&nbsp;&nbsp;&nbsp;{"name":"psytrance_v2","scale":0.95,"sha256":"0c94..."}<br>
+&nbsp;&nbsp;],<br>
+&nbsp;&nbsp;"seed": 1297183202,<br>
+&nbsp;&nbsp;"output_sha256": "f33a..."<br>
+}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<h3 style="margin-top:30px">📱 Mobile — phone screens</h3>
+<p class="subtitle">Horizontal scroll tab strip at the top replaces the sidebar. Output stacks below form. Same Brutalist Mono.</p>
+
+<style>
+  .mob-frame { display:flex; gap:24px; flex-wrap:wrap; justify-content:center; align-items:flex-start; }
+  .mob-phone { background:#222; border-radius:18px; padding:8px; }
+  .mob-screen { width:200px; background:#0A0A0A; color:#E5E5E5; border-radius:12px; padding:10px; }
+  .mob-header { display:flex; justify-content:space-between; align-items:center; padding-bottom:6px; border-bottom:1px solid #1F1F1F; margin-bottom:8px; }
+  .mob-brand { font-size:11px; font-weight:600; }
+  .mob-cta { font-size:8px; color:#6B6B6B; }
+  .mob-tabs { display:flex; gap:6px; overflow-x:auto; padding:4px 0; margin-bottom:8px; border-bottom:1px solid #1F1F1F; }
+  .mob-tab { font-size:9px; color:#6B6B6B; white-space:nowrap; padding:4px 6px; }
+  .mob-tab.active { color:#FFF; border-bottom:1px solid #FFF; }
+  .mob-form { background:#141414; padding:10px; border-radius:5px; }
+  .mob-label { font-size:8px; text-transform:uppercase; letter-spacing:0.06em; color:#6B6B6B; margin-bottom:4px; }
+  .mob-input { background:#000; border:1px solid #2A2A2A; padding:5px 8px; border-radius:3px; font-size:9px; margin-bottom:8px; }
+  .mob-textarea { min-height:30px; }
+  .mob-chips { margin-bottom:8px; }
+  .mob-chip { display:inline-block; padding:2px 7px; border-radius:9px; font-size:8px; margin-right:3px; margin-bottom:3px; background:#000; border:1px solid #2A2A2A; color:#6B6B6B; }
+  .mob-chip.on { border-color:#FFF; color:#FFF; }
+  .mob-accordion { background:#000; border:1px solid #2A2A2A; border-radius:3px; padding:5px 8px; margin-bottom:6px; font-size:9px; color:#6B6B6B; display:flex; justify-content:space-between; }
+  .mob-btn { background:#FFF; color:#0A0A0A; padding:6px 10px; border-radius:3px; font-weight:600; font-size:9px; text-align:center; }
+  .mob-output { background:#141414; padding:10px; border-radius:5px; margin-top:8px; }
+  .mob-wave { height:30px; background:#000; border:1px solid #2A2A2A; border-radius:3px; display:flex; align-items:center; gap:1px; padding:4px; margin-bottom:6px; }
+  .mob-wave-bar { width:1px; background:#FFF; }
+  .mob-controls { display:flex; align-items:center; gap:6px; font-size:8px; color:#6B6B6B; margin-bottom:8px; }
+  .mob-play { width:20px; height:20px; border-radius:50%; background:#FFF; color:#0A0A0A; display:flex; align-items:center; justify-content:center; font-size:9px; }
+  .mob-export { display:flex; flex-wrap:wrap; gap:3px; }
+  .mob-secondary { border:1px solid #2A2A2A; padding:3px 8px; border-radius:3px; font-size:8px; color:#E5E5E5; }
+  .mob-dropzone { background:#000; border:2px solid #FFF; border-radius:4px; padding:6px 8px; margin-bottom:8px; font-size:8px; }
+  .mob-caption { text-align:center; color:#6B6B6B; font-size:10px; margin-top:8px; }
+  /* Mobile slider — bounded inside its container, no overflow */
+  .mob-slider { height:3px; background:#2A2A2A; border-radius:2px; position:relative; margin:6px 0 10px; box-sizing:border-box; }
+  .mob-slider::after { content:""; position:absolute; top:-3px; width:9px; height:9px; background:#FFF; border-radius:50%; transform:translateX(-50%); }
+  .mob-slider.p15::after { left:15%; }
+  .mob-slider.p93::after { left:93%; }
+</style>
+
+<div class="mob-frame">
+
+  <!-- Phone 1: Generate -->
+  <div>
+    <div class="mob-phone">
+      <div class="mob-screen">
+        <div class="mob-header">
+          <div class="mob-brand">ACE Music.</div>
+          <div class="mob-cta">♥ @tfw</div>
+        </div>
+        <div class="mob-tabs">
+          <div class="mob-tab active">🎵 Generate</div>
+          <div class="mob-tab">🎤 Cover</div>
+          <div class="mob-tab">⏩</div>
+          <div class="mob-tab">✏️</div>
+          <div class="mob-tab">✍️</div>
+        </div>
+        <div class="mob-form">
+          <div class="mob-label">Style</div>
+          <div class="mob-input">psytrance, acid leads</div>
+          <div class="mob-label">Lyrics</div>
+          <div class="mob-input mob-textarea">[verse] six in the morning...</div>
+          <div class="mob-label">Duration · 30 s</div>
+          <div class="mob-slider p15"></div>
+          <div class="mob-chips">
+            <span class="mob-chip on">psytrance_v2</span>
+            <span class="mob-chip">+ upload</span>
+          </div>
+          <div class="mob-accordion">▸ Advanced · BPM 135, sampler heun</div>
+          <div class="mob-accordion">▸ LM planner</div>
+          <div class="mob-accordion">▸ DCW</div>
+          <div class="mob-btn" style="margin-top:6px">▶ Generate</div>
+        </div>
+        <div class="mob-output">
+          <div class="mob-wave">
+            <div class="mob-wave-bar" style="height:30%"></div><div class="mob-wave-bar" style="height:60%"></div><div class="mob-wave-bar" style="height:80%"></div><div class="mob-wave-bar" style="height:50%"></div><div class="mob-wave-bar" style="height:70%"></div><div class="mob-wave-bar" style="height:90%"></div><div class="mob-wave-bar" style="height:40%"></div><div class="mob-wave-bar" style="height:65%"></div><div class="mob-wave-bar" style="height:80%"></div><div class="mob-wave-bar" style="height:55%"></div><div class="mob-wave-bar" style="height:75%"></div><div class="mob-wave-bar" style="height:45%"></div><div class="mob-wave-bar" style="height:35%"></div><div class="mob-wave-bar" style="height:60%"></div><div class="mob-wave-bar" style="height:25%"></div>
+          </div>
+          <div class="mob-controls">
+            <span class="mob-play">▶</span>
+            <span>0:00 / 0:30</span>
+            <span style="margin-left:auto; color:#FFF">↻</span>
+          </div>
+          <div class="mob-export">
+            <span class="mob-secondary">↓ mp3</span>
+            <span class="mob-secondary">↓ wav</span>
+            <span class="mob-secondary">stems</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mob-caption">Generate · 360 × 720 mobile</div>
+  </div>
+
+  <!-- Phone 2: Cover with file picked -->
+  <div>
+    <div class="mob-phone">
+      <div class="mob-screen">
+        <div class="mob-header">
+          <div class="mob-brand">ACE Music.</div>
+          <div class="mob-cta">♥ @tfw</div>
+        </div>
+        <div class="mob-tabs">
+          <div class="mob-tab">🎵</div>
+          <div class="mob-tab active">🎤 Cover</div>
+          <div class="mob-tab">⏩</div>
+          <div class="mob-tab">✏️</div>
+          <div class="mob-tab">✍️</div>
+        </div>
+        <div class="mob-form">
+          <div class="mob-label">1 · Reference</div>
+          <div class="mob-dropzone">
+            <strong style="color:#FFF">↑ ref_psy.wav</strong><br>
+            <span style="color:#6B6B6B">44.1k · 28 s · 2.1 MB</span>
+          </div>
+          <div class="mob-label">2 · New prompt</div>
+          <div class="mob-input">faster, more aggressive</div>
+          <div class="mob-label">3 · New lyrics</div>
+          <div class="mob-input mob-textarea">[verse] new lyrics over ref...</div>
+          <div class="mob-label">Cover strength · 0.93</div>
+          <div class="mob-slider p93"></div>
+          <div class="mob-chips">
+            <span class="mob-chip on">RapMachine</span>
+          </div>
+          <div class="mob-accordion">▸ Advanced</div>
+          <div class="mob-accordion">▸ LM planner</div>
+          <div class="mob-btn" style="margin-top:6px">▶ Cover</div>
+        </div>
+      </div>
+    </div>
+    <div class="mob-caption">Cover · with ref audio loaded</div>
+  </div>
+
+  <!-- Phone 3: Lyrics output -->
+  <div>
+    <div class="mob-phone">
+      <div class="mob-screen">
+        <div class="mob-header">
+          <div class="mob-brand">ACE Music.</div>
+          <div class="mob-cta">♥ @tfw</div>
+        </div>
+        <div class="mob-tabs">
+          <div class="mob-tab">🎵</div>
+          <div class="mob-tab">🎤</div>
+          <div class="mob-tab">⏩</div>
+          <div class="mob-tab">✏️</div>
+          <div class="mob-tab active">✍️ Lyrics</div>
+        </div>
+        <div class="mob-form">
+          <div class="mob-label">Brief</div>
+          <div class="mob-input mob-textarea">psytrance anthem about sunrise...</div>
+          <div class="mob-label">Structure</div>
+          <div class="mob-input">intro, verse, chorus...</div>
+          <div class="mob-label">Language · en · 0.85 temp</div>
+          <div class="mob-accordion">▸ LM parameters</div>
+          <div class="mob-btn" style="margin-top:6px">▶ Draft</div>
+        </div>
+        <div class="mob-output">
+          <div style="font-size:9px; line-height:1.5;">
+            <strong style="color:#FFF">[intro]</strong><br>
+            <span style="color:#B8B0A4">the lights start low...</span><br>
+            <strong style="color:#FFF">[verse 1]</strong><br>
+            <span style="color:#B8B0A4">six in the morning,<br>the sun's still pretending...</span>
+          </div>
+          <div class="mob-export" style="margin-top:8px">
+            <span class="mob-secondary" style="border-color:#FFF; color:#FFF">↑ Use in Generate</span>
+            <span class="mob-secondary">↻</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mob-caption">Lyrics · draft visible</div>
+  </div>
+
+</div>
+
+
+<h3 style="margin-top:30px">⚠️ Error and edge-case states</h3>
+
+<style>
+  .err { background:#0A0A0A; border:1px solid #1F1F1F; border-radius:8px; padding:14px; margin-bottom:10px; }
+  .err-row { display:flex; align-items:flex-start; gap:14px; }
+  .err-icon { width:28px; height:28px; flex-shrink:0; border-radius:50%; background:#FFF; color:#0A0A0A; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; }
+  .err-icon.warn { background:#0A0A0A; color:#FFF; border:1px solid #FFF; }
+  .err-icon.info { background:transparent; color:#6B6B6B; border:1px solid #6B6B6B; }
+  .err-body { flex:1; }
+  .err-title { font-size:12px; font-weight:600; color:#FFF; margin-bottom:4px; }
+  .err-msg { font-size:11px; color:#B8B0A4; line-height:1.5; margin-bottom:6px; }
+  .err-action { display:inline-block; border:1px solid #FFF; color:#FFF; padding:4px 10px; border-radius:3px; font-size:10px; cursor:pointer; margin-right:4px; }
+  .err-action.secondary { border-color:#2A2A2A; color:#B8B0A4; }
+  .err-tag { display:inline-block; background:#1A1A1A; color:#6B6B6B; padding:2px 6px; border-radius:3px; font-size:9px; font-family:monospace; margin-left:6px; }
+
+  .progress { background:#0A0A0A; border:1px solid #1F1F1F; border-radius:8px; padding:18px; margin-bottom:10px; }
+  .progress-bar { height:4px; background:#1A1A1A; border-radius:2px; overflow:hidden; margin:10px 0 6px; }
+  .progress-bar .fill { height:100%; background:#FFF; width:42%; }
+  .progress-meta { display:flex; justify-content:space-between; font-size:10px; color:#6B6B6B; font-family:monospace; }
+  .progress-title { font-size:12px; font-weight:600; color:#FFF; margin-bottom:4px; }
+  .progress-sub { font-size:10px; color:#6B6B6B; }
+</style>
+
+<div class="err">
+  <div class="err-row">
+    <div class="err-icon">!</div>
+    <div class="err-body">
+      <div class="err-title">LoRA not compatible <span class="err-tag">LoRAValidationError</span></div>
+      <div class="err-msg">This LoRA was trained against <code>SDXL</code>, not ACE-Step 1.5 XL SFT. Expected DiT modules: <code>to_q, to_k, to_v, to_out.0, ff.net.0.proj, ff.net.2</code>. Got: <code>unet.down_blocks…</code>.</div>
+      <div class="err-action">Remove from stack</div>
+      <span class="err-action secondary">View header diagnostics</span>
+    </div>
+  </div>
+</div>
+
+<div class="err">
+  <div class="err-row">
+    <div class="err-icon warn">⚠</div>
+    <div class="err-body">
+      <div class="err-title">ZeroGPU timed out · auto-retried at 2× duration</div>
+      <div class="err-msg">First attempt aborted at the 60 s shared-A10G cap. Second attempt at 120 s also aborted. Try a shorter duration, fewer steps, or fewer active LoRAs. <span style="color:#6B6B6B">last seen: 70 s wall, step 41/50</span></div>
+      <div class="err-action">Lower steps to 30</div>
+      <span class="err-action secondary">Reduce duration to 20 s</span>
+    </div>
+  </div>
+</div>
+
+<div class="err">
+  <div class="err-row">
+    <div class="err-icon warn">⚠</div>
+    <div class="err-body">
+      <div class="err-title">MPS op not implemented · falling back to CPU <span class="err-tag">aten::_fft_r2c</span></div>
+      <div class="err-msg">An ACE-Step kernel hit a PyTorch MPS gap. CPU fallback engaged via <code>PYTORCH_ENABLE_MPS_FALLBACK=1</code>. Generation will continue but be ~2–3× slower for the affected segments.</div>
+      <div class="err-action secondary">Continue anyway</div>
+      <span class="err-action secondary">Open issue on GitHub</span>
+    </div>
+  </div>
+</div>
+
+<div class="err">
+  <div class="err-row">
+    <div class="err-icon">!</div>
+    <div class="err-body">
+      <div class="err-title">Reference audio rejected <span class="err-tag">unsupported format</span></div>
+      <div class="err-msg">Cover mode needs <code>wav</code>, <code>mp3</code>, or <code>flac</code>, ≤ 60 s, ≤ 50 MB. Got <code>m4a</code>, 4:12 long, 87 MB.</div>
+      <div class="err-action">Pick a different file</div>
+      <span class="err-action secondary">Auto-convert + trim to first 60 s</span>
+    </div>
+  </div>
+</div>
+
+<div class="err">
+  <div class="err-row">
+    <div class="err-icon info">i</div>
+    <div class="err-body">
+      <div class="err-title">First request — warming up the pipeline (~45 s)</div>
+      <div class="err-msg">Loading <code>ACE-Step v1.5 XL SFT</code> weights into MPS memory. Subsequent generations in this session start instantly.</div>
+    </div>
+  </div>
+</div>
+
+<div class="progress">
+  <div class="progress-title">Generating… <span style="color:#6B6B6B; font-weight:400; font-size:10px;">step 21 / 50 · ETA 14 s</span></div>
+  <div class="progress-sub">heun sampler · CFG 5.0 · 2 LoRAs active · seed 1297183202</div>
+  <div class="progress-bar"><div class="fill"></div></div>
+  <div class="progress-meta">
+    <span>0:08 elapsed</span>
+    <span>↻ cancel</span>
+  </div>
+</div>
+
+<div class="options" style="margin-top:24px">
+  <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>All mockups approved — bake them into the spec</h3>
+      <p>Move every approved mockup into <code>docs/superpowers/specs/mockups/</code> and reference them from §8 of the spec. Then hand off to writing-plans.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>Revise something specific</h3>
+      <p>Tell me which mockup / control / error needs work.</p>
+    </div>
+  </div>
+</div>
