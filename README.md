@@ -1,29 +1,22 @@
 ---
 title: ACE Music Studio
-emoji: "🎵"
+emoji: 🎵
 colorFrom: gray
 colorTo: gray
 sdk: gradio
-sdk_version: "5.50.0"
+sdk_version: 6.14.0
 app_file: app.py
-python_version: "3.11"
-suggested_hardware: zero-a10g
-hf_oauth: false
+pinned: false
+license: mit
+short_description: Open-source song generation studio on ACE-Step 1.5 XL SFT — Generate, Cover, Extend, Edit, draft Lyrics.
 preload_from_hub:
-  - ACE-Step/acestep-v15-xl-sft *.safetensors,config.json,scheduler/*,vae/*,tokenizer/*
-  - Qwen/Qwen2.5-7B-Instruct *.safetensors,config.json,tokenizer*
-  - facebook/htdemucs_ft *.th
+- ACE-Step/Ace-Step1.5 vae/diffusion_pytorch_model.safetensors,vae/config.json,encoder/pytorch_model.bin,encoder/config.json,encoder/tokenizer.json
+- ACE-Step/acestep-v15-xl-sft model.safetensors
 ---
 
 # ACE Music Studio
 
-A single-process Gradio app that wraps [ACE-Step 1.5 XL SFT](https://github.com/ace-step/ACE-Step-1.5) for full-song generation with vocals, with bundled Qwen 2.5 7B for lyrics and Demucs for stem separation. Runs locally on Apple Silicon (MPS+MLX) or NVIDIA (CUDA), deploys to Hugging Face Spaces (ZeroGPU).
-
-[![Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Spaces-Live-FFFFFF?style=flat-square)](https://huggingface.co/spaces/techfreakworm/ace-music-studio)
-[![GitHub stars](https://img.shields.io/github/stars/techfreakworm/ace-music-studio?style=flat-square)](https://github.com/techfreakworm/ace-music-studio/stargazers)
-[![License: MIT](https://img.shields.io/badge/License-MIT-FFFFFF?style=flat-square)](LICENSE)
-[![Python 3.11](https://img.shields.io/badge/Python-3.11-FFFFFF?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
-[![Backed by ACE-Step](https://img.shields.io/badge/backend-ACE--Step%201.5%20XL%20SFT-FFFFFF?style=flat-square)](https://github.com/ace-step/ACE-Step-1.5)
+A single-process Gradio app that wraps [ACE-Step 1.5 XL SFT](https://github.com/ace-step/ACE-Step-1.5) for full-song generation with vocals, with Qwen 2.5 for lyrics drafting and Demucs for stem separation. Runs locally on **Apple Silicon (MPS+MLX)** or **NVIDIA (CUDA)**, deploys to **Hugging Face Spaces (ZeroGPU)**.
 
 → **Live demo:** https://huggingface.co/spaces/techfreakworm/ace-music-studio
 
@@ -31,7 +24,7 @@ A single-process Gradio app that wraps [ACE-Step 1.5 XL SFT](https://github.com/
 
 ## What's inside
 
-Five tabs. One ACE-Step pipeline underneath. Progressive disclosure — defaults stay short and reveal advanced controls only when asked.
+Five modes. One ACE-Step pipeline underneath. Progressive disclosure — defaults stay short and reveal advanced controls only when asked.
 
 | Mode | Inputs | What it does |
 |---|---|---|
@@ -41,38 +34,43 @@ Five tabs. One ACE-Step pipeline underneath. Progressive disclosure — defaults
 | **Edit** | source audio + segment + target lyrics | Repaint a segment OR flow-morph caption-to-caption |
 | **Lyrics** | brief + structure | Qwen 2.5 7B drafts structurally-tagged lyrics |
 
-Every song tab supports stacked LoRAs — 4 bundled presets (RapMachine, Chinese Rap, Lyric2Vocal, Text2Samples) plus arbitrary `.safetensors` uploads.
+Every song mode supports a single stacked LoRA — bundled presets plus arbitrary `.safetensors` uploads. The preset registry ships with the official ACE-Step LoRAs published on HF:
+
+- [ACE-Step/ACE-Step-v1-chinese-rap-LoRA](https://huggingface.co/ACE-Step/ACE-Step-v1-chinese-rap-LoRA)
+- [ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA](https://huggingface.co/ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA)
+
+After every song generation, three post-process actions sit beneath the player: **Demucs stem separation**, **pyloudnorm normalisation to -14 LUFS**, and **MP3 320k export via ffmpeg**.
 
 ---
 
-## Quick start (local)
+## Local setup
 
-Requires **Python 3.11**, ~32 GB free disk for weights, and **128 GB unified memory recommended on Apple Silicon** (M5 Max ideal; M3 Max+ workable).
+Requires **Python 3.11**, ~32 GB free disk for weights, and **128 GB unified memory recommended on Apple Silicon** (M5 Max ideal; M3 Max+ workable). On NVIDIA, ~24 GB VRAM.
 
 ```bash
 git clone https://github.com/techfreakworm/ace-music-studio
 cd ace-music-studio
-bash setup.sh
+bash setup.sh             # creates .venv, installs requirements
 source .venv/bin/activate
-python app.py    # http://127.0.0.1:7860
+python app.py             # http://127.0.0.1:7860
 ```
 
-First launch downloads the ACE-Step + Qwen + Demucs weights into your HF cache (`~/.cache/huggingface/hub/`). Subsequent starts are fast.
+`setup.sh` detects Apple Silicon and adds `requirements-mac.txt` (MLX-LM + the [`clockworksquirrel/ace-step-apple-silicon`](https://github.com/clockworksquirrel/ace-step-apple-silicon) fork). First launch downloads weights into your HF cache (`~/.cache/huggingface/hub/`).
 
-**Apple Silicon notes:** `PYTORCH_ENABLE_MPS_FALLBACK=1` is set automatically by `app.py`. The Mac path uses the [`clockworksquirrel/ace-step-apple-silicon`](https://github.com/clockworksquirrel/ace-step-apple-silicon) fork for MLX-LM + MPS-DiT hybrid execution.
+`PYTORCH_ENABLE_MPS_FALLBACK=1` is set automatically by `app.py` so the few MPS-unsupported ops degrade to CPU.
 
-## Quick start (HF Spaces)
+## HF Spaces deploy
 
 ```bash
-git remote add space https://huggingface.co/spaces/techfreakworm/ace-music-studio
+git remote add space https://huggingface.co/spaces/<your-handle>/ace-music-studio
 git push space main
 ```
 
-`preload_from_hub` in this README pre-downloads ~32 GB of weights at build time. `app._bootstrap()` mirrors the read-only build cache into `~/hf-cache-rw/` then symlinks every snapshot into `./models/<repo>/` so the pipeline finds them locally on first request.
+`preload_from_hub` (this README's frontmatter) pre-downloads the ACE-Step 1.5 XL SFT umbrella weights at build time. `app._bootstrap_spaces_cache()` runs once at module init when `SPACE_ID` is set, symlinking the HF cache into the fork's expected `<site-packages>/checkpoints/` layout so the pipeline finds them on first request. `@spaces.GPU(duration=180)` decorates the click handlers — on Spaces it gates them to a ZeroGPU worker, locally it's a no-op.
 
 ## Architecture
 
-See [`docs/superpowers/specs/2026-05-18-ace-music-studio-design.md`](docs/superpowers/specs/2026-05-18-ace-music-studio-design.md) for the full design. UI mockups live in [`docs/superpowers/specs/mockups/`](docs/superpowers/specs/mockups/).
+See [`docs/superpowers/specs/2026-05-18-ace-music-studio-design.md`](docs/superpowers/specs/2026-05-18-ace-music-studio-design.md) for the full design and [`docs/superpowers/plans/2026-05-18-ace-music-studio.md`](docs/superpowers/plans/2026-05-18-ace-music-studio.md) for the implementation plan.
 
 ## License
 
@@ -80,4 +78,6 @@ MIT for the app code (see `LICENSE`). ACE-Step 1.5 XL SFT, Qwen 2.5 7B Instruct,
 
 ## Credits
 
-ACE-Step by [ACE Studio × StepFun](https://ace-step.github.io/). Apple Silicon port by [clockworksquirrel](https://github.com/clockworksquirrel/ace-step-apple-silicon). Qwen 2.5 by [Alibaba](https://huggingface.co/Qwen). Demucs by [Meta AI](https://github.com/facebookresearch/demucs). Built by [@techfreakworm](https://huggingface.co/techfreakworm).
+ACE-Step by [ACE Studio × StepFun](https://ace-step.github.io/). Apple Silicon port by [clockworksquirrel](https://github.com/clockworksquirrel/ace-step-apple-silicon). Qwen 2.5 by [Alibaba](https://huggingface.co/Qwen). Demucs by [Meta AI](https://github.com/facebookresearch/demucs).
+
+Made with ❤️ by [Mayank Gupta](https://huggingface.co/techfreakworm).

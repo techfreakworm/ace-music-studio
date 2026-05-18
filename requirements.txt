@@ -11,3 +11,7 @@ librosa>=0.10
 huggingface_hub>=0.25
 numpy>=1.26,<2
 ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git
+# HF Spaces ZeroGPU. Do NOT pin — HF's ZeroGPU build injects its own version
+# and a pin causes pip-resolve failure. Locally the `import spaces` in
+# app._maybe_spaces_gpu() is wrapped in try/except so absence is fine.
+spaces; sys_platform == "linux"

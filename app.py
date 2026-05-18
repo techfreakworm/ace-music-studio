@@ -28,9 +28,10 @@ state gives us the sidebar "active item" highlight for free via CSS
 DO NOT switch this back to ``gr.Tabs`` — that produces top-positioned
 horizontal tabs which contradicts the wireframes.
 
-On HF Spaces, ``_bootstrap()`` runs once on import to mirror the
-read-only preload cache into a writable tree. On Mac/Linux locally,
-it's a no-op until M7.
+On HF Spaces (``SPACE_ID`` env present), ``_bootstrap_spaces_cache()``
+runs once on import to symlink HF hub cache snapshots into the
+acestep-apple-silicon fork's ``<site-packages>/checkpoints/`` layout.
+On Mac/Linux locally, it's a no-op.
 """
 
 from __future__ import annotations
@@ -65,6 +66,78 @@ def get_backend() -> be.ACEStepStudioBackend:
     if _BACKEND is None:
         _BACKEND = be.ACEStepStudioBackend()
     return _BACKEND
+
+
+def _bootstrap_spaces_cache() -> None:
+    """On HF Spaces, mirror the HF hub cache into the site-packages checkpoints/ dir.
+
+    The acestep-apple-silicon fork resolves checkpoints relative to its own install
+    location (``.venv/.../site-packages/checkpoints/``). HF Spaces puts model weights
+    in the HF hub cache. This bootstrap snapshot-downloads the two required repos
+    into the cache (using preload mirror if available) and then symlinks each
+    snapshot child into ``checkpoints/`` so the fork's resolver finds them.
+
+    Local Mac/CUDA: no-op (guarded by ``SPACE_ID`` env var).
+    """
+    if not os.getenv("SPACE_ID"):
+        return
+
+    import site
+
+    from huggingface_hub import snapshot_download
+
+    site_pkgs = site.getsitepackages()[0]
+    target_dir = Path(site_pkgs) / "checkpoints"
+
+    if target_dir.exists():
+        return  # already bootstrapped
+
+    hf_home = os.getenv("HF_HOME", "/home/user/.cache/huggingface")
+
+    # Download Ace-Step1.5 umbrella (vae + encoder).
+    umbrella_path = snapshot_download(
+        repo_id="ACE-Step/Ace-Step1.5",
+        cache_dir=hf_home,
+    )
+
+    # Download the XL SFT diffusion variant.
+    xl_sft_path = snapshot_download(
+        repo_id="ACE-Step/acestep-v15-xl-sft",
+        cache_dir=hf_home,
+    )
+
+    # Merge both snapshots into ``checkpoints/`` via symlinks.
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for src_path in [umbrella_path, xl_sft_path]:
+        for child in Path(src_path).iterdir():
+            link = target_dir / child.name
+            if not link.exists():
+                link.symlink_to(child)
+
+
+def _maybe_spaces_gpu():
+    """Return ``@spaces.GPU(duration=180)`` on HF Spaces, otherwise a no-op decorator.
+
+    The decorator MUST be applied at module load time — ZeroGPU's startup
+    analyzer doesn't see runtime decoration. Local dev is a transparent pass-through.
+    """
+    if os.getenv("SPACE_ID"):
+        try:
+            import spaces
+
+            return spaces.GPU(duration=180)
+        except ImportError:
+            pass
+
+    def _noop(fn):
+        return fn
+
+    return _noop
+
+
+# Run cache bootstrap at module import so HF Spaces' startup analyzer sees
+# the symlinks before the lazy backend singleton is constructed on first click.
+_bootstrap_spaces_cache()
 
 
 def _safe_call(fn, *args, **kwargs):
@@ -190,6 +263,7 @@ def on_lora_strength_change(state, strength: float):
     return new_state, _active_md(new_state["name"], float(strength), kind)
 
 
+@_maybe_spaces_gpu()
 def on_generate_click(
     prompt: str,
     lyrics: str,
@@ -218,6 +292,7 @@ def on_generate_click(
     return out_path, meta, new_history
 
 
+@_maybe_spaces_gpu()
 def on_cover_click(
     ref_audio,
     prompt: str,
@@ -249,6 +324,7 @@ def on_cover_click(
     return out_path, meta, new_history
 
 
+@_maybe_spaces_gpu()
 def on_extend_click(
     seed_audio,
     extra_prompt: str,
@@ -288,6 +364,7 @@ def on_extend_click(
     return out_path, meta, new_history
 
 
+@_maybe_spaces_gpu()
 def on_draft_lyrics(
     brief: str,
     structure: str,
@@ -365,6 +442,7 @@ def on_export_mp3(audio_path):
     return gr.File(value=str(out), visible=True)
 
 
+@_maybe_spaces_gpu()
 def on_edit_click(
     source_audio,
     sub_mode: str,
@@ -493,14 +571,6 @@ MODE_CHOICES = [
     ("✏️ Edit", "edit"),
     ("✍️ Lyrics", "lyrics"),
 ]
-
-
-def _bootstrap() -> None:
-    """HF Spaces: mirror read-only preload cache into a writable tree.
-
-    Local Mac/CUDA: no-op. Implemented at M7 when we wire deployment.
-    """
-    pass
 
 
 def build_app() -> gr.Blocks:
@@ -762,7 +832,6 @@ def build_app() -> gr.Blocks:
 
 
 if __name__ == "__main__":
-    _bootstrap()
     demo = build_app()
     demo.queue(default_concurrency_limit=1)
     demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
