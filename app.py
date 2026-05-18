@@ -1,8 +1,36 @@
 """ACE Music Studio — Gradio entrypoint.
 
-On HF Spaces, `_bootstrap()` runs once on import to mirror the read-only
-preload cache into a writable tree. On Mac/Linux locally, it's a no-op.
-The backend singleton is lazy-loaded on first generation request.
+UI ARCHITECTURE (locked — read this before editing):
+
+The five "modes" (Generate / Cover / Extend / Edit / Lyrics) are NOT
+implemented via ``gr.Tabs``. The wireframes at
+``docs/superpowers/specs/mockups/`` show a LEFT sidebar with mode pills +
+a session History section, and a single content column on the right.
+
+The implementation pattern is:
+
+  gr.Row(elem_classes=["ams-body"])
+  ├── gr.Column(min_width=190, elem_classes=["ams-sidebar"])
+  │   ├── gr.Radio(label=None, elem_classes=["ams-side-radio"])   ← 5 mode choices
+  │   └── gr.HTML(... "History · session" ...)
+  └── gr.Column(elem_classes=["ams-content"])
+      ├── gr.Group(visible=True)  ← pane_generate
+      ├── gr.Group(visible=False) ← pane_cover
+      ├── gr.Group(visible=False) ← pane_extend
+      ├── gr.Group(visible=False) ← pane_edit
+      └── gr.Group(visible=False) ← pane_lyrics
+
+The Radio's ``change`` event fires ``_switch_pane(mode)`` which returns
+visibility updates for the five Groups. The Radio's native ``:checked``
+state gives us the sidebar "active item" highlight for free via CSS
+(see ``theme.CSS`` for ``.ams-side-radio`` selectors).
+
+DO NOT switch this back to ``gr.Tabs`` — that produces top-positioned
+horizontal tabs which contradicts the wireframes.
+
+On HF Spaces, ``_bootstrap()`` runs once on import to mirror the
+read-only preload cache into a writable tree. On Mac/Linux locally,
+it's a no-op until M7.
 """
 
 from __future__ import annotations
@@ -17,6 +45,7 @@ os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 
 import gradio as gr
 
+import ace_pipeline
 import theme
 
 HEADER_HTML = """
@@ -24,9 +53,22 @@ HEADER_HTML = """
   <div>
     <div class="ams-brand">ACE Music Studio<span class="ams-brand-period">.</span></div>
   </div>
-  <div class="ams-status">ready</div>
+  <div class="ams-status" id="ams-status">ready</div>
 </div>
 """.strip()
+
+
+def _status_html(device: str) -> str:
+    """Right-aligned status indicator in the header. Updated at boot only."""
+    return f"""
+<div class="ams-header">
+  <div>
+    <div class="ams-brand">ACE Music Studio<span class="ams-brand-period">.</span></div>
+  </div>
+  <div class="ams-status">ready · {device.upper()}</div>
+</div>
+""".strip()
+
 
 CTA_HTML = """
 <div class="ams-cta">
@@ -39,6 +81,23 @@ CTA_HTML = """
 """.strip()
 
 
+HISTORY_HTML = """
+<div class="ams-history">
+  <div class="ams-history-title">History · session</div>
+  <div class="ams-history-empty">No generations yet</div>
+</div>
+""".strip()
+
+
+MODE_CHOICES = [
+    ("🎵 Generate", "generate"),
+    ("🎤 Cover", "cover"),
+    ("⏩ Extend", "extend"),
+    ("✏️ Edit", "edit"),
+    ("✍️ Lyrics", "lyrics"),
+]
+
+
 def _bootstrap() -> None:
     """HF Spaces: mirror read-only preload cache into a writable tree.
 
@@ -48,21 +107,45 @@ def _bootstrap() -> None:
 
 
 def build_app() -> gr.Blocks:
+    device = ace_pipeline.detect_device()
+
     with gr.Blocks(theme=theme.build_theme(), css=theme.CSS, title="ACE Music Studio") as demo:
-        gr.HTML(HEADER_HTML)
+        gr.HTML(_status_html(device))
         gr.HTML(CTA_HTML)
 
-        with gr.Tabs():
-            with gr.Tab("🎵 Generate"):
-                gr.Markdown("Generate tab placeholder — implemented in M1.")
-            with gr.Tab("🎤 Cover"):
-                gr.Markdown("Cover tab placeholder — implemented in M3.")
-            with gr.Tab("⏩ Extend"):
-                gr.Markdown("Extend tab placeholder — implemented in M3.")
-            with gr.Tab("✏️ Edit"):
-                gr.Markdown("Edit tab placeholder — implemented in M3.")
-            with gr.Tab("✍️ Lyrics"):
-                gr.Markdown("Lyrics tab placeholder — implemented in M4.")
+        with gr.Row(elem_classes=["ams-body"]):
+            # --- Sidebar ----------------------------------------------------
+            with gr.Column(scale=0, min_width=190, elem_classes=["ams-sidebar"]):
+                mode = gr.Radio(
+                    choices=MODE_CHOICES,
+                    value="generate",
+                    label=None,
+                    show_label=False,
+                    container=False,
+                    elem_classes=["ams-side-radio"],
+                )
+                gr.HTML(HISTORY_HTML)
+
+            # --- Content ----------------------------------------------------
+            with gr.Column(scale=10, elem_classes=["ams-content"]):
+                with gr.Group(visible=True, elem_classes=["ams-tab-pane"]) as pane_generate:
+                    gr.Markdown("### 🎵 Generate\n\nPlaceholder — implemented in M1.")
+                with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_cover:
+                    gr.Markdown("### 🎤 Cover\n\nPlaceholder — implemented in M3.")
+                with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_extend:
+                    gr.Markdown("### ⏩ Extend\n\nPlaceholder — implemented in M3.")
+                with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_edit:
+                    gr.Markdown("### ✏️ Edit\n\nPlaceholder — implemented in M3.")
+                with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_lyrics:
+                    gr.Markdown("### ✍️ Lyrics\n\nPlaceholder — implemented in M4.")
+
+        panes = [pane_generate, pane_cover, pane_extend, pane_edit, pane_lyrics]
+
+        def _switch_pane(selected: str):
+            order = ["generate", "cover", "extend", "edit", "lyrics"]
+            return tuple(gr.Group(visible=(selected == name)) for name in order)
+
+        mode.change(fn=_switch_pane, inputs=mode, outputs=panes)
 
     return demo
 
