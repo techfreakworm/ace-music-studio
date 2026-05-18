@@ -23,7 +23,7 @@ pytestmark = pytest.mark.gpu
 
 def test_generate_minimum_song(tmp_path):
     """Smallest end-to-end: 5 s instrumental drone, seed=1."""
-    os.environ.setdefault("ACE_MODEL_PATH", "ACE-Step/ACE-Step-v1.5-XL-SFT")
+    os.environ.setdefault("ACE_MODEL_PATH", "ACE-Step/acestep-v15-xl-sft")
 
     from backend import ACEStepStudioBackend
 

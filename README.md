@@ -10,7 +10,7 @@ python_version: "3.11"
 suggested_hardware: zero-a10g
 hf_oauth: false
 preload_from_hub:
-  - ACE-Step/ACE-Step-v1.5-XL-SFT *.safetensors,config.json,scheduler/*,vae/*,tokenizer/*
+  - ACE-Step/acestep-v15-xl-sft *.safetensors,config.json,scheduler/*,vae/*,tokenizer/*
   - Qwen/Qwen2.5-7B-Instruct *.safetensors,config.json,tokenizer*
   - facebook/htdemucs_ft *.th
 ---

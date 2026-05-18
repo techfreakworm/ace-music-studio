@@ -44,7 +44,7 @@ def vram_limit_for(device: str) -> int | None:
 
 
 _PIPELINE = None  # module-level lazy singleton
-_DEFAULT_MODEL_ID = "ACE-Step/ACE-Step-v1.5-XL-SFT"
+_DEFAULT_MODEL_ID = "ACE-Step/acestep-v15-xl-sft"
 
 
 def _load_pipeline(device: str, model_path: str):
