@@ -1,0 +1,13 @@
+gradio>=5.50,<6
+transformers>=4.45,<5
+torch>=2.4
+torchaudio>=2.4
+safetensors>=0.4
+peft>=0.13
+demucs>=4.0
+pyloudnorm>=0.1.1
+soundfile>=0.12
+librosa>=0.10
+huggingface_hub>=0.25
+numpy>=1.26,<2
+ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git
