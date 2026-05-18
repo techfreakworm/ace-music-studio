@@ -964,7 +964,15 @@ git commit -m "feat(app): bootstrap gradio blocks with brutalist mono chrome"
 
 ### Task C1: `ace_pipeline.py` — `ACEStepStudio` lazy wrapper
 
-**⚠ API CORRECTION (commit `99375d0`, 2026-05-18).** The plan originally assumed `from ace_step import ACEStepPipeline` with a `from_pretrained` entry point. That API does **NOT** exist in the installed `acestep` package (both upstream and the Apple-Silicon fork). The real API is:
+**⚠ API CORRECTION (commits `99375d0` + `317bd6f`, 2026-05-18).** Three related corrections to record:
+
+1. The `from ace_step import ACEStepPipeline.from_pretrained` pattern does NOT exist. Real API is the split-handler pattern shown below.
+2. **Checkpoint location is hardcoded** — `AceStepHandler._get_project_root()` ignores the `project_root` argument passed to `initialize_service()` and uses `os.path.dirname(os.path.dirname(__file__))` instead, which resolves to the package's install location (e.g., `.venv/lib/python3.11/site-packages/`). To make checkpoints live next to the repo, symlink `.venv/lib/python3.11/site-packages/checkpoints` → `./checkpoints` after the first install.
+3. **Checkpoints come from TWO repos**, not one:
+   - **Umbrella `ACE-Step/Ace-Step1.5`** (~10 GB) — ships `vae/`, `Qwen3-Embedding-0.6B/`, `acestep-v15-turbo/`, `acestep-5Hz-lm-1.7B/`, and a top-level `config.json`. The handler's `MAIN_MODEL_COMPONENTS` list requires all four directories with their weight files present. Pre-download with `hf download ACE-Step/Ace-Step1.5 --local-dir checkpoints`.
+   - **Variant repo `ACE-Step/acestep-v15-xl-sft`** (~16 GB) — XL SFT-only weights. Pre-download with `hf download ACE-Step/acestep-v15-xl-sft --local-dir checkpoints/acestep-v15-xl-sft`. Similarly `acestep-5Hz-lm-0.6B` (~1.4 GB) for the smaller LM planner.
+
+The real API is:
 
 ```python
 from acestep.handler import AceStepHandler
