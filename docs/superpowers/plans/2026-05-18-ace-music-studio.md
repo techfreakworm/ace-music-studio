@@ -1440,12 +1440,14 @@ git commit -m "feat(ui): add generate tab builder with prompt/lyrics/duration/vo
 
 ### Task C5: Wire Generate tab into `app.py`
 
+**⚠ Read the WIREFRAME COMPLIANCE section first.** Mode nav is `gr.Radio` + `gr.Group` panes — never `gr.Tabs`.
+
 **Files:**
 - Modify: `app.py`
 
-- [ ] **Step 1: Replace the Generate placeholder with the real tab**
+- [ ] **Step 1: Add the click handler and replace the Generate pane's Markdown placeholder with the real form**
 
-Edit `app.py`'s `build_app()`:
+Edit `app.py`. Add these helpers near the top (after imports):
 
 ```python
 import random
@@ -1489,32 +1491,21 @@ def on_generate_click(
     except ValueError as e:
         raise gr.Error(str(e)) from e
     return out_path, meta
-
-
-def build_app() -> gr.Blocks:
-    with gr.Blocks(theme=theme.build_theme(), css=theme.CSS, title="ACE Music Studio") as demo:
-        gr.HTML(HEADER_HTML)
-        gr.HTML(CTA_HTML)
-
-        with gr.Tabs():
-            with gr.Tab("🎵 Generate"):
-                g = ui.build_generate_tab()
-                g["generate_btn"].click(
-                    fn=on_generate_click,
-                    inputs=[g["prompt"], g["lyrics"], g["duration_s"], g["instrumental"]],
-                    outputs=[g["output_audio"], g["output_meta"]],
-                )
-            with gr.Tab("🎤 Cover"):
-                gr.Markdown("Cover tab placeholder — implemented in M3.")
-            with gr.Tab("⏩ Extend"):
-                gr.Markdown("Extend tab placeholder — implemented in M3.")
-            with gr.Tab("✏️ Edit"):
-                gr.Markdown("Edit tab placeholder — implemented in M3.")
-            with gr.Tab("✍️ Lyrics"):
-                gr.Markdown("Lyrics tab placeholder — implemented in M4.")
-
-    return demo
 ```
+
+Inside `build_app()`, replace the existing `pane_generate` block's `gr.Markdown` placeholder with the real form. The rest of `build_app()` (HEADER / CTA / `ams-body` row / sidebar / `mode.change(_switch_pane, ...)`) stays exactly as-is. Pattern:
+
+```python
+with gr.Group(visible=True, elem_classes=["ams-tab-pane"]) as pane_generate:
+    g = ui.build_generate_tab()
+    g["generate_btn"].click(
+        fn=on_generate_click,
+        inputs=[g["prompt"], g["lyrics"], g["duration_s"], g["instrumental"]],
+        outputs=[g["output_audio"], g["output_meta"]],
+    )
+```
+
+Cover / Extend / Edit / Lyrics panes still keep their `gr.Markdown` placeholders for now (filled in at M3 / M4). The sidebar / pane-swap wiring is unchanged.
 
 - [ ] **Step 2: Install ACE-Step on Mac**
 
