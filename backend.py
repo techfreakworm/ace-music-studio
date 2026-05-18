@@ -20,6 +20,7 @@ except ImportError:  # pragma: no cover - covered by manual local testing
     _HAS_SPACES = False
 
 import ace_pipeline as ap
+import lora_stack
 
 
 def _maybe_seed(seed: int | None) -> int:
@@ -51,6 +52,7 @@ class ACEStepStudioBackend:
         params["seed"] = _maybe_seed(params.get("seed"))
         t0 = time.time()
         pipe = ap.get_pipeline()
+        lora_stack.apply_stack(pipe, params.get("loras", []))
         out_path = self._call_pipe_for_mode(pipe, mode, params)
         meta = {
             "mode": mode,

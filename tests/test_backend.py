@@ -69,3 +69,32 @@ def test_dispatch_random_seed_if_zero(monkeypatch, tmp_path):
     # The seed-resolved value is the one forwarded to the wrapper
     sent_params = fake_pipe.generate.call_args.args[0]
     assert sent_params["seed"] == meta["seed"]
+
+
+def test_dispatch_applies_lora_stack(monkeypatch, tmp_path):
+    fake_pipe = MagicMock()
+    fake_pipe.generate.return_value = str(tmp_path / "x.wav")
+    (tmp_path / "x.wav").write_bytes(b"RIFF")
+    monkeypatch.setattr("ace_pipeline.get_pipeline", lambda: fake_pipe)
+
+    apply_mock = MagicMock()
+    monkeypatch.setattr("lora_stack.apply_stack", apply_mock)
+
+    b = be.ACEStepStudioBackend()
+    stack = [{"name": "RapMachine", "scale": 0.85, "path": "/x.safetensors", "sha256": "a" * 64}]
+    b.dispatch(
+        mode="generate",
+        params={
+            "prompt": "p",
+            "lyrics": "",
+            "duration_s": 5,
+            "instrumental": False,
+            "seed": 1,
+            "loras": stack,
+            "advanced": {},
+            "lm": {},
+            "dcw": {},
+        },
+    )
+
+    apply_mock.assert_called_once_with(fake_pipe, stack)
