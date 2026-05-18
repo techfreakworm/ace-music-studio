@@ -3,11 +3,18 @@
 Each handler validates inputs, builds the ACE-Step kwargs for its mode, and
 hands off to `backend.dispatch(...)`. Backend ownership of @spaces.GPU and
 pipeline lifecycle keeps these handlers cheap to test.
+
+The ``lyrics()`` handler is the odd one out: it does NOT touch the ACE-Step
+backend at all. It calls ``lyrics_lm.generate_lyrics`` directly, since the
+Qwen 2.5 7B LM is its own lazy singleton and doesn't share the DiT / 5Hz
+pipeline lifecycle with the audio modes.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+import lyrics_lm
 
 
 def _require(params: dict[str, Any], field: str) -> Any:
@@ -155,3 +162,61 @@ def edit(backend, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         )
 
     return backend.dispatch(mode="edit", params=out_params)
+
+
+def lyrics(backend, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Lyrics-only mode. Returns ``(drafted_text, metadata_dict)``.
+
+    Does NOT touch the ACE-Step backend — Qwen 2.5 7B Instruct is owned
+    by ``lyrics_lm`` as its own lazy singleton. The ``backend`` argument
+    is kept in the signature for parity with the other mode handlers but
+    is unused here.
+    """
+    del backend  # signature parity with generate/cover/extend/edit
+    brief = _require(params, "brief")
+    structure = params.get("structure", "intro, verse, chorus, verse, chorus, bridge, chorus, outro")
+    language = params.get("language", "en")
+    tone = params.get("tone", "")
+    verse_lines = int(params.get("verse_lines", 6))
+    chorus_lines = int(params.get("chorus_lines", 4))
+    bridge_lines = int(params.get("bridge_lines", 2))
+    rhyme = params.get("rhyme", "loose")
+    temperature = float(params.get("temperature", 0.85))
+    top_p = float(params.get("top_p", 0.9))
+    top_k = int(params.get("top_k", 40))
+    max_new_tokens = int(params.get("max_new_tokens", 600))
+    seed = params.get("seed")
+
+    text = lyrics_lm.generate_lyrics(
+        brief=brief,
+        structure=structure,
+        language=language,
+        tone=tone,
+        verse_lines=verse_lines,
+        chorus_lines=chorus_lines,
+        bridge_lines=bridge_lines,
+        rhyme=rhyme,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        max_new_tokens=max_new_tokens,
+        seed=seed,
+    )
+    meta = {
+        "mode": "lyrics",
+        "model": lyrics_lm._DEFAULT_MAC_ID,
+        "brief_first_line": brief.splitlines()[0] if brief else "",
+        "structure": structure,
+        "language": language,
+        "tone": tone,
+        "verse_lines": verse_lines,
+        "chorus_lines": chorus_lines,
+        "bridge_lines": bridge_lines,
+        "rhyme": rhyme,
+        "temperature": temperature,
+        "top_p": top_p,
+        "top_k": top_k,
+        "max_new_tokens": max_new_tokens,
+        "seed": seed,
+    }
+    return text, meta
