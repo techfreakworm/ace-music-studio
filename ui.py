@@ -73,7 +73,7 @@ def _build_lora_accordion(components: dict[str, gr.components.Component]) -> Non
 
 
 def _build_output_panel(components: dict[str, gr.components.Component]) -> None:
-    """Shared OUTPUT (gr.Audio) + METADATA (gr.JSON) bordered panels.
+    """Shared OUTPUT (gr.Audio) + post-process actions + METADATA (gr.JSON).
 
     elem_classes on each output component give CSS hooks for the
     Brutalist Mono treatment (uppercase mono labels + bordered
@@ -83,12 +83,51 @@ def _build_output_panel(components: dict[str, gr.components.Component]) -> None:
     gr.JSON renders a dict directly as a syntax-highlighted, expandable
     tree. gr.Code(language="json") refuses dicts — it requires a
     pre-stringified blob — and crashes with "'dict' has no .strip()".
+
+    Below the Audio we expose three secondary post-process actions
+    (M5/G2): Demucs stem separation, pyloudnorm LUFS normalisation, and
+    ffmpeg MP3 export. Each emits to a hidden output (stem_files /
+    normalised_audio / mp3_file) that becomes visible only once the
+    click handler returns a populated value.
     """
     components["output_audio"] = gr.Audio(
         label="Output",
         type="filepath",
         interactive=False,
         elem_classes=["ams-out", "ams-out-audio"],
+    )
+    with gr.Row(elem_classes=["ams-post-actions"]):
+        components["separate_stems_btn"] = gr.Button(
+            "↯ Separate stems",
+            variant="secondary",
+            elem_classes=["ams-post-btn"],
+        )
+        components["normalise_btn"] = gr.Button(
+            "▮ Normalise -14 LUFS",
+            variant="secondary",
+            elem_classes=["ams-post-btn"],
+        )
+        components["mp3_btn"] = gr.Button(
+            "↓ MP3 320k",
+            variant="secondary",
+            elem_classes=["ams-post-btn"],
+        )
+    components["stem_files"] = gr.Files(
+        label="Stems",
+        visible=False,
+        elem_classes=["ams-stem-files"],
+    )
+    components["normalised_audio"] = gr.Audio(
+        label="Normalised (-14 LUFS)",
+        type="filepath",
+        interactive=False,
+        visible=False,
+        elem_classes=["ams-out", "ams-out-normalised"],
+    )
+    components["mp3_file"] = gr.File(
+        label="MP3 download",
+        visible=False,
+        elem_classes=["ams-mp3-file"],
     )
     components["output_meta"] = gr.JSON(
         label="Metadata",

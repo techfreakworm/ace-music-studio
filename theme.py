@@ -914,6 +914,46 @@ main, .contain {{
   padding:0 12px 12px 12px !important;
 }}
 
+/* ============================================================
+ * Post-process action row (M5/G2) — sits below the Output Audio.
+ * Three compact mono pills (separate stems / normalise / mp3 export)
+ * that surface hidden gr.Files / gr.Audio / gr.File widgets once a
+ * post-process click handler returns. The bordered list chrome on
+ * stem_files + mp3_file matches the generic .ams-out treatment so
+ * the populated state reads as a continuation of the Output panel.
+ * ============================================================ */
+.ams-content .ams-post-actions {{
+  gap: 6px !important;
+  margin: 8px 0 0 0 !important;
+}}
+.ams-content .ams-post-btn {{
+  font-family: {FONT_MONO} !important;
+  font-size: 11px !important;
+  letter-spacing: 0.04em !important;
+  padding: 8px 10px !important;
+  background: #000 !important;
+  border: 1px solid {BORDER} !important;
+  color: {INK} !important;
+  border-radius: 3px !important;
+}}
+.ams-content .ams-post-btn:hover {{
+  border-color: {PRIMARY} !important;
+}}
+/* Stem files + mp3 file widgets — compact bordered list */
+.ams-content .ams-stem-files,
+.ams-content .ams-mp3-file {{
+  background: #000 !important;
+  border: 1px solid {BORDER} !important;
+  border-radius: 3px !important;
+  margin-top: 6px !important;
+}}
+@media (max-width: 640px) {{
+  .ams-content .ams-post-btn {{
+    font-size: 10px !important;
+    padding: 7px 8px !important;
+  }}
+}}
+
 /* Hide Gradio footer + the floating "Use via API" / settings panel */
 footer {{ display:none !important; }}
 .show-api {{ display:none !important; }}

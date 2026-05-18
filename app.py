@@ -53,6 +53,7 @@ import ace_pipeline
 import backend as be
 import lora_stack
 import modes
+import post_process
 import theme
 import ui
 
@@ -305,6 +306,39 @@ def on_draft_lyrics(
         raise gr.Error(str(e)) from e
 
 
+def on_separate_stems(audio_path):
+    """Run Demucs on the current Output audio and surface 4 stem files."""
+    if not audio_path:
+        raise gr.Error("Generate a song first.")
+    try:
+        stems = post_process.separate_stems(audio_path)
+    except Exception as e:
+        raise gr.Error(f"Demucs failed: {e}") from e
+    return gr.Files(value=list(stems.values()), visible=True)
+
+
+def on_normalise(audio_path):
+    """Run pyloudnorm at -14 LUFS and surface the normalised WAV."""
+    if not audio_path:
+        raise gr.Error("Generate a song first.")
+    try:
+        out = post_process.normalise_lufs(audio_path, target_lufs=-14.0)
+    except Exception as e:
+        raise gr.Error(f"Normalisation failed: {e}") from e
+    return gr.Audio(value=str(out), visible=True)
+
+
+def on_export_mp3(audio_path):
+    """Encode the current Output to MP3 320 k via ffmpeg and surface the file."""
+    if not audio_path:
+        raise gr.Error("Generate a song first.")
+    try:
+        out = post_process.to_mp3(audio_path, bitrate_kbps=320)
+    except Exception as e:
+        raise gr.Error(f"MP3 export failed: {e}") from e
+    return gr.File(value=str(out), visible=True)
+
+
 def on_edit_click(
     source_audio,
     sub_mode: str,
@@ -458,6 +492,22 @@ def build_app() -> gr.Blocks:
                         ],
                         outputs=[g["output_audio"], g["output_meta"]],
                     )
+                    # Post-processing actions (M5/G2)
+                    g["separate_stems_btn"].click(
+                        fn=on_separate_stems,
+                        inputs=[g["output_audio"]],
+                        outputs=[g["stem_files"]],
+                    )
+                    g["normalise_btn"].click(
+                        fn=on_normalise,
+                        inputs=[g["output_audio"]],
+                        outputs=[g["normalised_audio"]],
+                    )
+                    g["mp3_btn"].click(
+                        fn=on_export_mp3,
+                        inputs=[g["output_audio"]],
+                        outputs=[g["mp3_file"]],
+                    )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_cover:
                     c = ui.build_cover_tab()
                     c["lora_preset"].change(
@@ -486,6 +536,22 @@ def build_app() -> gr.Blocks:
                             c["lora_state"],
                         ],
                         outputs=[c["output_audio"], c["output_meta"]],
+                    )
+                    # Post-processing actions (M5/G2)
+                    c["separate_stems_btn"].click(
+                        fn=on_separate_stems,
+                        inputs=[c["output_audio"]],
+                        outputs=[c["stem_files"]],
+                    )
+                    c["normalise_btn"].click(
+                        fn=on_normalise,
+                        inputs=[c["output_audio"]],
+                        outputs=[c["normalised_audio"]],
+                    )
+                    c["mp3_btn"].click(
+                        fn=on_export_mp3,
+                        inputs=[c["output_audio"]],
+                        outputs=[c["mp3_file"]],
                     )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_extend:
                     x = ui.build_extend_tab()
@@ -519,6 +585,22 @@ def build_app() -> gr.Blocks:
                             x["lora_state"],
                         ],
                         outputs=[x["output_audio"], x["output_meta"]],
+                    )
+                    # Post-processing actions (M5/G2)
+                    x["separate_stems_btn"].click(
+                        fn=on_separate_stems,
+                        inputs=[x["output_audio"]],
+                        outputs=[x["stem_files"]],
+                    )
+                    x["normalise_btn"].click(
+                        fn=on_normalise,
+                        inputs=[x["output_audio"]],
+                        outputs=[x["normalised_audio"]],
+                    )
+                    x["mp3_btn"].click(
+                        fn=on_export_mp3,
+                        inputs=[x["output_audio"]],
+                        outputs=[x["mp3_file"]],
                     )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_edit:
                     e = ui.build_edit_tab()
@@ -555,6 +637,22 @@ def build_app() -> gr.Blocks:
                             e["lora_state"],
                         ],
                         outputs=[e["output_audio"], e["output_meta"]],
+                    )
+                    # Post-processing actions (M5/G2)
+                    e["separate_stems_btn"].click(
+                        fn=on_separate_stems,
+                        inputs=[e["output_audio"]],
+                        outputs=[e["stem_files"]],
+                    )
+                    e["normalise_btn"].click(
+                        fn=on_normalise,
+                        inputs=[e["output_audio"]],
+                        outputs=[e["normalised_audio"]],
+                    )
+                    e["mp3_btn"].click(
+                        fn=on_export_mp3,
+                        inputs=[e["output_audio"]],
+                        outputs=[e["mp3_file"]],
                     )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_lyrics:
                     lyr = ui.build_lyrics_tab()
