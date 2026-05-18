@@ -6,6 +6,8 @@ detection — the pipeline class itself is filled in at M1.
 
 from __future__ import annotations
 
+import os
+
 
 def detect_device() -> str:
     """Returns 'cuda', 'mps', or 'cpu' in priority order."""
@@ -39,3 +41,32 @@ def vram_limit_for(device: str) -> int | None:
         return max(0, free - 2 * 1024**3)
     except Exception:
         return None
+
+
+_PIPELINE = None  # module-level lazy singleton
+_DEFAULT_MODEL_ID = "ACE-Step/ACE-Step-v1.5-XL-SFT"
+
+
+def _load_pipeline(device: str, model_path: str):
+    """Construct the ACE-Step pipeline. Heavy import is local so unit tests can mock."""
+    from ace_step import ACEStepPipeline  # type: ignore[import-not-found]
+
+    # On Mac, the apple-silicon fork sets dtype + backend automatically.
+    # On CUDA we pass bf16 explicitly.
+    if device == "cuda":
+        pipe = ACEStepPipeline.from_pretrained(model_path, torch_dtype="bf16")
+    else:
+        pipe = ACEStepPipeline.from_pretrained(model_path)
+
+    pipe.to(device)
+    return pipe
+
+
+def get_pipeline():
+    """Lazy-load the ACE-Step pipeline once per process."""
+    global _PIPELINE
+    if _PIPELINE is None:
+        device = detect_device()
+        model_path = os.environ.get("ACE_MODEL_PATH", _DEFAULT_MODEL_ID)
+        _PIPELINE = _load_pipeline(device, model_path)
+    return _PIPELINE
