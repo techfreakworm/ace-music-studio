@@ -60,6 +60,7 @@ def _build_lora_accordion(components: dict[str, gr.components.Component]) -> Non
             step=0.05,
             value=0.95,
             label="Strength",
+            info=tooltips.LORA_STRENGTH,
             elem_classes=["ams-lora-strength"],
         )
         components["lora_active"] = gr.Markdown(
@@ -212,11 +213,13 @@ def build_cover_tab() -> dict[str, gr.components.Component]:
                 label="New style prompt (optional)",
                 placeholder="faster, more aggressive leads",
                 lines=2,
+                info=tooltips.COVER_PROMPT,
             )
             components["lyrics"] = gr.Textbox(
                 label="New lyrics",
                 placeholder="[verse] new lyrics over the reference style",
                 lines=5,
+                info=tooltips.COVER_LYRICS,
             )
             with gr.Row():
                 components["duration_s"] = gr.Slider(
@@ -225,6 +228,7 @@ def build_cover_tab() -> dict[str, gr.components.Component]:
                     step=5,
                     value=30,
                     label="Duration (s)",
+                    info=tooltips.COVER_DURATION,
                 )
                 components["audio_cover_strength"] = gr.Slider(
                     minimum=0.0,
@@ -232,7 +236,7 @@ def build_cover_tab() -> dict[str, gr.components.Component]:
                     step=0.01,
                     value=0.93,
                     label="Cover strength",
-                    info="Higher = closer to reference. Lower = more drift.",
+                    info=tooltips.COVER_STRENGTH,
                 )
 
             _build_lora_accordion(components)
@@ -275,11 +279,13 @@ def build_extend_tab() -> dict[str, gr.components.Component]:
                 label="Extension prompt",
                 placeholder="build to climax, layered acid leads",
                 lines=2,
+                info=tooltips.EXTEND_PROMPT,
             )
             components["extension_lyrics"] = gr.Textbox(
                 label="Extension lyrics (optional)",
                 placeholder="[bridge] the drop is coming...",
                 lines=4,
+                info=tooltips.EXTEND_LYRICS,
             )
             with gr.Row():
                 components["extra_duration_s"] = gr.Slider(
@@ -288,6 +294,7 @@ def build_extend_tab() -> dict[str, gr.components.Component]:
                     step=5,
                     value=60,
                     label="Extra duration (s)",
+                    info=tooltips.EXTEND_DURATION,
                 )
                 components["wav_crossfade_s"] = gr.Slider(
                     minimum=0.0,
@@ -295,7 +302,7 @@ def build_extend_tab() -> dict[str, gr.components.Component]:
                     step=0.1,
                     value=2.0,
                     label="WAV crossfade (s)",
-                    info="Experimental — not yet wired in this acestep build.",
+                    info=tooltips.EXTEND_CROSSFADE,
                 )
 
             with gr.Accordion(
@@ -374,30 +381,31 @@ def build_edit_tab() -> dict[str, gr.components.Component]:
                 choices=["repaint", "flow_edit"],
                 value="repaint",
                 label="Edit sub-mode",
-                info=(
-                    "repaint: regenerate the segment from new lyrics. "
-                    "flow_edit: morph caption-to-caption (experimental)."
-                ),
+                info=tooltips.EDIT_SUB_MODE,
             )
             components["source_lyrics"] = gr.Textbox(
                 label="Source lyrics",
                 lines=3,
+                info=tooltips.EDIT_SOURCE_LYRICS,
             )
             components["target_lyrics"] = gr.Textbox(
                 label="Target lyrics",
                 placeholder="[chorus] new chorus replaces the old",
                 lines=3,
+                info=tooltips.EDIT_TARGET_LYRICS,
             )
             with gr.Row():
                 components["segment_start_s"] = gr.Number(
                     value=0.0,
                     label="Segment start (s)",
                     precision=1,
+                    info=tooltips.EDIT_SEGMENT_START,
                 )
                 components["segment_end_s"] = gr.Number(
                     value=30.0,
                     label="Segment end (s)",
                     precision=1,
+                    info=tooltips.EDIT_SEGMENT_END,
                 )
 
             with gr.Accordion(
@@ -484,16 +492,19 @@ def build_lyrics_tab() -> dict[str, gr.components.Component]:
                 label="Brief",
                 lines=4,
                 placeholder=("Describe the song. Tone, mood, references, specific images, lines to avoid…"),
+                info=tooltips.LYRICS_BRIEF,
             )
             with gr.Row():
                 c["structure"] = gr.Textbox(
                     label="Structure",
                     value="intro, verse, chorus, verse, chorus, bridge, chorus, outro",
+                    info=tooltips.LYRICS_STRUCTURE,
                 )
                 c["language"] = gr.Dropdown(
                     choices=["en", "zh", "ja", "ko", "es", "fr", "de"],
                     value="en",
                     label="Language",
+                    info=tooltips.LYRICS_LANGUAGE,
                 )
             with gr.Row():
                 c["verse_lines"] = gr.Slider(
@@ -520,6 +531,7 @@ def build_lyrics_tab() -> dict[str, gr.components.Component]:
             c["tone"] = gr.Textbox(
                 label="Tone / mood",
                 placeholder="euphoric, hypnotic, transcendent, not cheesy",
+                info=tooltips.LYRICS_TONE,
             )
             c["rhyme"] = gr.Radio(
                 choices=["strict", "loose", "none"],
@@ -537,6 +549,7 @@ def build_lyrics_tab() -> dict[str, gr.components.Component]:
                     value=0.85,
                     step=0.05,
                     label="Temperature",
+                    info=tooltips.LYRICS_TEMPERATURE,
                 )
                 c["top_p"] = gr.Slider(
                     minimum=0.0,
@@ -544,6 +557,7 @@ def build_lyrics_tab() -> dict[str, gr.components.Component]:
                     value=0.9,
                     step=0.05,
                     label="Top-p",
+                    info=tooltips.LYRICS_TOP_P,
                 )
                 c["top_k"] = gr.Slider(
                     minimum=0,
@@ -551,6 +565,7 @@ def build_lyrics_tab() -> dict[str, gr.components.Component]:
                     value=40,
                     step=1,
                     label="Top-k",
+                    info=tooltips.LYRICS_TOP_K,
                 )
                 c["max_new_tokens"] = gr.Slider(
                     minimum=100,
@@ -558,6 +573,7 @@ def build_lyrics_tab() -> dict[str, gr.components.Component]:
                     value=600,
                     step=50,
                     label="Max new tokens",
+                    info=tooltips.LYRICS_MAX_TOKENS,
                 )
                 c["seed"] = gr.Number(
                     value=42,
