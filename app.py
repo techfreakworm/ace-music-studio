@@ -261,6 +261,50 @@ def on_extend_click(
         raise gr.Error(str(e)) from e
 
 
+def on_draft_lyrics(
+    brief: str,
+    structure: str,
+    language: str,
+    tone: str,
+    verse_lines: float,
+    chorus_lines: float,
+    bridge_lines: float,
+    rhyme: str,
+    temperature: float,
+    top_p: float,
+    top_k: float,
+    max_new_tokens: float,
+    seed,
+    progress=gr.Progress(track_tqdm=True),  # noqa: B008
+):
+    """Lyrics-mode click. Calls ``modes.lyrics(...)`` directly — no ACE-Step
+    pipeline is touched. Qwen 2.5 7B is its own lazy singleton inside
+    ``lyrics_lm``; the first click triggers a ~4 GB MLX download (cached
+    afterwards) and ~30 s warm-up before the draft appears.
+    """
+    try:
+        return modes.lyrics(
+            get_backend(),
+            params={
+                "brief": brief,
+                "structure": structure,
+                "language": language,
+                "tone": tone,
+                "verse_lines": int(verse_lines),
+                "chorus_lines": int(chorus_lines),
+                "bridge_lines": int(bridge_lines),
+                "rhyme": rhyme,
+                "temperature": float(temperature),
+                "top_p": float(top_p),
+                "top_k": int(top_k),
+                "max_new_tokens": int(max_new_tokens),
+                "seed": int(seed) if seed is not None else None,
+            },
+        )
+    except ValueError as e:
+        raise gr.Error(str(e)) from e
+
+
 def on_edit_click(
     source_audio,
     sub_mode: str,
@@ -513,7 +557,35 @@ def build_app() -> gr.Blocks:
                         outputs=[e["output_audio"], e["output_meta"]],
                     )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_lyrics:
-                    gr.Markdown("### ✍️ Lyrics\n\nPlaceholder — implemented in M4.")
+                    lyr = ui.build_lyrics_tab()
+                    lyr["draft_btn"].click(
+                        fn=on_draft_lyrics,
+                        inputs=[
+                            lyr["brief"],
+                            lyr["structure"],
+                            lyr["language"],
+                            lyr["tone"],
+                            lyr["verse_lines"],
+                            lyr["chorus_lines"],
+                            lyr["bridge_lines"],
+                            lyr["rhyme"],
+                            lyr["temperature"],
+                            lyr["top_p"],
+                            lyr["top_k"],
+                            lyr["max_new_tokens"],
+                            lyr["seed"],
+                        ],
+                        outputs=[lyr["lyrics_output"], lyr["meta_output"]],
+                    )
+                    # Cross-tab "Use these in Generate" — pipes the drafted
+                    # text straight into the Generate tab's lyrics textbox.
+                    # Both panes were declared inside the same gr.Blocks
+                    # context so referencing g["lyrics"] across panes works.
+                    lyr["use_in_generate_btn"].click(
+                        fn=lambda txt: txt,
+                        inputs=[lyr["lyrics_output"]],
+                        outputs=[g["lyrics"]],
+                    )
 
         panes = [pane_generate, pane_cover, pane_extend, pane_edit, pane_lyrics]
 

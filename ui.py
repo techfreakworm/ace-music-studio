@@ -418,3 +418,137 @@ def build_edit_tab() -> dict[str, gr.components.Component]:
             _build_output_panel(components)
 
     return components
+
+
+def build_lyrics_tab() -> dict[str, gr.components.Component]:
+    """Lyrics tab body: Qwen 2.5 7B drafts structurally-tagged lyrics.
+
+    Compact 2-column row: form on the left (brief / structure / language /
+    line counts / tone / rhyme + collapsed LM-params accordion), output on
+    the right (read-only multi-line textbox + ``Use these in Generate``
+    cross-tab CTA + bordered JSON metadata panel).
+
+    The output textbox carries ``elem_classes=["ams-lyrics-output"]`` so
+    the Brutalist Mono treatment in ``theme.CSS`` (mono font, 12 px,
+    280 px min-height) applies. The "Use in Generate" button is tagged
+    ``ams-lyrics-use-btn`` so it gets a small top margin instead of
+    sitting flush against the textbox.
+
+    Does NOT include the LoRA accordion — Qwen-7B has no LoRA picker and
+    the audio-mode LoRA semantics don't apply here.
+    """
+    c: dict[str, gr.components.Component] = {}
+    with gr.Row():
+        # --- FORM column (left) ---
+        with gr.Column(scale=12):
+            c["brief"] = gr.Textbox(
+                label="Brief",
+                lines=4,
+                placeholder=("Describe the song. Tone, mood, references, specific images, lines to avoid…"),
+            )
+            with gr.Row():
+                c["structure"] = gr.Textbox(
+                    label="Structure",
+                    value="intro, verse, chorus, verse, chorus, bridge, chorus, outro",
+                )
+                c["language"] = gr.Dropdown(
+                    choices=["en", "zh", "ja", "ko", "es", "fr", "de"],
+                    value="en",
+                    label="Language",
+                )
+            with gr.Row():
+                c["verse_lines"] = gr.Slider(
+                    minimum=2,
+                    maximum=10,
+                    value=6,
+                    step=1,
+                    label="Verse lines",
+                )
+                c["chorus_lines"] = gr.Slider(
+                    minimum=2,
+                    maximum=8,
+                    value=4,
+                    step=1,
+                    label="Chorus lines",
+                )
+                c["bridge_lines"] = gr.Slider(
+                    minimum=1,
+                    maximum=6,
+                    value=2,
+                    step=1,
+                    label="Bridge lines",
+                )
+            c["tone"] = gr.Textbox(
+                label="Tone / mood",
+                placeholder="euphoric, hypnotic, transcendent, not cheesy",
+            )
+            c["rhyme"] = gr.Radio(
+                choices=["strict", "loose", "none"],
+                value="loose",
+                label="Rhyme",
+            )
+            with gr.Accordion(
+                "LM parameters",
+                open=False,
+                elem_classes=["ams-lm-accordion"],
+            ):
+                c["temperature"] = gr.Slider(
+                    minimum=0.0,
+                    maximum=2.0,
+                    value=0.85,
+                    step=0.05,
+                    label="Temperature",
+                )
+                c["top_p"] = gr.Slider(
+                    minimum=0.0,
+                    maximum=1.0,
+                    value=0.9,
+                    step=0.05,
+                    label="Top-p",
+                )
+                c["top_k"] = gr.Slider(
+                    minimum=0,
+                    maximum=200,
+                    value=40,
+                    step=1,
+                    label="Top-k",
+                )
+                c["max_new_tokens"] = gr.Slider(
+                    minimum=100,
+                    maximum=2000,
+                    value=600,
+                    step=50,
+                    label="Max new tokens",
+                )
+                c["seed"] = gr.Number(
+                    value=42,
+                    precision=0,
+                    label="Seed",
+                )
+            c["draft_btn"] = gr.Button(
+                "▶ Draft lyrics",
+                variant="primary",
+            )
+
+        # --- OUTPUT column (right) ---
+        with gr.Column(scale=10):
+            # NOTE: gr.Textbox in Gradio 6.14 doesn't accept ``show_copy_button``
+            # (the kwarg landed in a later 6.x). The Brutalist Mono textbox already
+            # exposes a native selection + browser copy via Cmd-A / Cmd-C; the
+            # copy-button affordance is therefore a no-op miss here.
+            c["lyrics_output"] = gr.Textbox(
+                label="Draft",
+                lines=14,
+                interactive=False,
+                elem_classes=["ams-lyrics-output"],
+            )
+            c["use_in_generate_btn"] = gr.Button(
+                "↑ Use these in Generate",
+                variant="primary",
+                elem_classes=["ams-lyrics-use-btn"],
+            )
+            c["meta_output"] = gr.JSON(
+                label="Metadata",
+                elem_classes=["ams-out", "ams-out-meta"],
+            )
+    return c

@@ -861,6 +861,59 @@ main, .contain {{
   padding:0 12px 12px 12px !important;
 }}
 
+/* ============================================================
+ * Lyrics tab (M4)
+ * Mono draft textbox + secondary "Use in Generate" CTA. The LM-params
+ * accordion reuses the same chrome as the LoRA + experimental
+ * accordions so the bordered section header reads consistently.
+ * ============================================================ */
+.ams-content .ams-lyrics-output textarea {{
+  font-family: {FONT_MONO} !important;
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+  min-height: 280px !important;
+  background:{SURFACE_STRONG} !important;
+  border:1px solid {BORDER} !important;
+  color:{INK} !important;
+}}
+.ams-content .ams-lyrics-output textarea::placeholder {{
+  font-style: italic;
+}}
+.ams-content .ams-lyrics-use-btn {{
+  margin-top: 6px !important;
+}}
+.ams-content .ams-lm-accordion {{
+  border:1px solid {BORDER} !important;
+  border-radius:3px !important;
+  background:{SURFACE_STRONG} !important;
+  margin-top:10px !important;
+  padding:0 !important;
+}}
+.ams-content .ams-lm-accordion > .label-wrap,
+.ams-content .ams-lm-accordion summary,
+.ams-content .ams-lm-accordion > button {{
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+  color:{INK_MUTED} !important;
+  padding:10px 12px !important;
+  background:transparent !important;
+  border:none !important;
+}}
+.ams-content .ams-lm-accordion > .label-wrap span,
+.ams-content .ams-lm-accordion summary span,
+.ams-content .ams-lm-accordion > button span {{
+  color:{INK_MUTED} !important;
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+}}
+.ams-content .ams-lm-accordion > div:not(.label-wrap):not(summary) {{
+  padding:0 12px 12px 12px !important;
+}}
+
 /* Hide Gradio footer + the floating "Use via API" / settings panel */
 footer {{ display:none !important; }}
 .show-api {{ display:none !important; }}
