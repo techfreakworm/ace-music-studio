@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+.superpowers/brainstorm/
+models/
+output/
+hf-cache-rw/
+*.safetensors
+*.bin
+*.pth
+*.wav
+*.mp3
+*.flac
+!presets/*.safetensors
