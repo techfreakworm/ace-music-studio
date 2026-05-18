@@ -6,14 +6,16 @@ pipeline. Run before each release tag.
 Skipped automatically in CI by the pyproject ``addopts = -m 'not gpu'``
 default. Requires:
 
-- ``ace-step`` installed (Apple Silicon fork on Mac, upstream on CUDA)
-- First run downloads ACE-Step 1.5 XL SFT weights (~16 GB) into the HF cache
+- ``acestep`` package installed (Apple Silicon fork on Mac, upstream on CUDA)
+- DiT checkpoint at ``./checkpoints/acestep-v15-xl-sft/`` (~16 GB) — download via
+  ``hf download ACE-Step/acestep-v15-xl-sft --local-dir checkpoints/acestep-v15-xl-sft``
+- LM checkpoint at ``./checkpoints/acestep-5Hz-lm-0.6B/`` (~1.4 GB) — download via
+  ``hf download ACE-Step/acestep-5Hz-lm-0.6B --local-dir checkpoints/acestep-5Hz-lm-0.6B``
 - A real MPS / CUDA device — CPU inference is functionally untested
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -21,31 +23,36 @@ import pytest
 pytestmark = pytest.mark.gpu
 
 
-def test_generate_minimum_song(tmp_path):
-    """Smallest end-to-end: 5 s instrumental drone, seed=1."""
-    os.environ.setdefault("ACE_MODEL_PATH", "ACE-Step/acestep-v15-xl-sft")
+def test_generate_minimum_song():
+    """Smallest end-to-end: 10 s instrumental drone, seed=1, 16 diffusion steps.
 
+    Asserts the pipeline produces a non-empty audio file. Wall time on
+    cold start (handlers + weight loading) should be < 5 min on M5 Max
+    with checkpoints pre-downloaded; subsequent calls in the same process
+    are bounded by the diffusion compute itself (~10-30 s for these settings).
+    """
     from backend import ACEStepStudioBackend
 
     b = ACEStepStudioBackend()
     out_path, meta = b.dispatch(
         mode="generate",
         params={
-            "prompt": "test tone, simple drone",
-            "lyrics": "[intro] tone",
-            "duration_s": 5,
+            "prompt": "ambient drone, sine pad, slow swell",
+            "lyrics": "",
+            "duration_s": 10,
             "instrumental": True,
             "seed": 1,
             "loras": [],
-            "advanced": {},
-            "lm": {},
+            # Tune for smoke speed: fewer steps, lower CFG, skip LM CoT
+            "advanced": {"steps": 16, "cfg": 3.0, "audio_format": "wav"},
+            "lm": {"thinking": False},
             "dcw": {},
         },
     )
-    assert Path(out_path).exists()
-    assert Path(out_path).stat().st_size > 0
+
+    p = Path(out_path)
+    assert p.exists(), f"generated file missing: {out_path}"
+    assert p.stat().st_size > 0, "generated file is empty"
     assert meta["mode"] == "generate"
     assert meta["seed"] == 1
-    # Wall time should be < 5 min even on first cold run + 16 GB weight download.
-    # Subsequent runs should be < 30 s on M5 Max.
     assert meta["wall_seconds"] > 0

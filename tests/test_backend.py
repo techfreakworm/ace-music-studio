@@ -1,4 +1,4 @@
-"""L2 tests for backend.dispatch — pipeline is mocked at the boundary."""
+"""L2 tests for backend.dispatch — pipeline is mocked at the wrapper boundary."""
 
 from __future__ import annotations
 
@@ -7,12 +7,13 @@ from unittest.mock import MagicMock
 import backend as be
 
 
-def test_dispatch_generate_calls_pipeline_with_expected_kwargs(monkeypatch, tmp_path):
-    fake_pipe = MagicMock()
+def test_dispatch_generate_calls_pipeline_generate(monkeypatch, tmp_path):
+    """Backend should call ``pipe.generate(params)`` and return its path."""
     fake_out = tmp_path / "out.wav"
     fake_out.write_bytes(b"RIFF" + b"\0" * 1000)
-    fake_pipe.return_value = str(fake_out)
 
+    fake_pipe = MagicMock()
+    fake_pipe.generate.return_value = str(fake_out)
     monkeypatch.setattr("ace_pipeline.get_pipeline", lambda: fake_pipe)
 
     b = be.ACEStepStudioBackend()
@@ -34,13 +35,19 @@ def test_dispatch_generate_calls_pipeline_with_expected_kwargs(monkeypatch, tmp_
     assert out_path == str(fake_out)
     assert meta["mode"] == "generate"
     assert meta["seed"] == 42
-    fake_pipe.assert_called_once()
+    fake_pipe.generate.assert_called_once()
+    # The full params dict is forwarded to pipe.generate
+    sent_params = fake_pipe.generate.call_args.args[0]
+    assert sent_params["prompt"] == "psytrance"
+    assert sent_params["seed"] == 42
 
 
 def test_dispatch_random_seed_if_zero(monkeypatch, tmp_path):
-    fake_pipe = MagicMock(return_value=str(tmp_path / "x.wav"))
+    out = tmp_path / "x.wav"
+    out.write_bytes(b"RIFF")
+    fake_pipe = MagicMock()
+    fake_pipe.generate.return_value = str(out)
     monkeypatch.setattr("ace_pipeline.get_pipeline", lambda: fake_pipe)
-    (tmp_path / "x.wav").write_bytes(b"RIFF")
 
     b = be.ACEStepStudioBackend()
     _, meta = b.dispatch(
@@ -59,3 +66,6 @@ def test_dispatch_random_seed_if_zero(monkeypatch, tmp_path):
     )
 
     assert 1 <= meta["seed"] <= 2_147_483_647
+    # The seed-resolved value is the one forwarded to the wrapper
+    sent_params = fake_pipe.generate.call_args.args[0]
+    assert sent_params["seed"] == meta["seed"]

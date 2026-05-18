@@ -68,14 +68,17 @@ class ACEStepStudioBackend:
         return out_path, meta
 
     def _call_pipe_for_mode(self, pipe, mode: str, params: dict[str, Any]) -> str:
-        """Mode-specific kwargs translation. Filled out per milestone."""
+        """Dispatch to the pipeline wrapper.
+
+        ``pipe`` is the ``ACEStepStudio`` wrapper returned by
+        ``ace_pipeline.get_pipeline()``. It exposes a single
+        ``generate(params)`` method that handles the underlying
+        AceStepHandler + LLMHandler + generate_music plumbing.
+
+        Cover / Extend / Edit / Lyrics task_types are mapped here at
+        M3 / M4 by switching ``params["task_type"]`` before calling.
+        """
         if mode == "generate":
-            return pipe(
-                prompt=params["prompt"],
-                lyrics=params.get("lyrics", ""),
-                duration_s=params["duration_s"],
-                instrumental=params.get("instrumental", False),
-                seed=params["seed"],
-            )
+            return pipe.generate(params)
         # cover / extend / edit / lyrics get filled in at M3 / M4
         raise NotImplementedError(f"Mode {mode!r} is not wired yet")
