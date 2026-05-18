@@ -62,6 +62,35 @@ def build_theme() -> gr.themes.Base:
 
 
 CSS = f"""
+/* === Override Gradio's Tailwind-slate "neutral" palette ================
+   Gradio's gr.themes.colors.gray is actually Tailwind slate-* which has
+   a noticeable blue tint (--neutral-900 = #111827, --neutral-950 = #0b0f19).
+   On phone displays with cool color temperatures this reads as bluish-grey
+   and contradicts the Brutalist Mono spec. Force true-neutral hex values. */
+:root, html.dark {{
+  --neutral-50: #FAFAFA !important;
+  --neutral-100: #F5F5F5 !important;
+  --neutral-200: #E5E5E5 !important;
+  --neutral-300: #D4D4D4 !important;
+  --neutral-400: #A3A3A3 !important;
+  --neutral-500: #737373 !important;
+  --neutral-600: #525252 !important;
+  --neutral-700: #404040 !important;
+  --neutral-800: #262626 !important;
+  --neutral-900: #141414 !important;
+  --neutral-950: #0A0A0A !important;
+  --body-background-fill: {BG} !important;
+  --background-fill-primary: {SURFACE} !important;
+  --background-fill-secondary: {SURFACE_STRONG} !important;
+  --block-background-fill: {SURFACE} !important;
+  --block-label-background-fill: transparent !important;
+  --block-title-background-fill: transparent !important;
+  --input-background-fill: {SURFACE_STRONG} !important;
+  --border-color-primary: {BORDER} !important;
+  --border-color-accent: {BORDER_STRONG} !important;
+  --color-accent: {PRIMARY} !important;
+}}
+
 /* === Body chrome ======================================================= */
 .ams-header {{
   display:flex; justify-content:space-between; align-items:baseline;
@@ -199,6 +228,44 @@ CSS = f"""
 /* === Hide Gradio footer ================================================ */
 footer {{ display:none !important; }}
 
+/* === Tighten Gradio chrome (narrow scope to avoid breaking output) =====
+   Only sharpen the INPUT control surfaces (textareas, number inputs)
+   so they read as crisp Brutalist Mono panels. Do NOT touch generic
+   ``.block`` padding — that collapses gr.Audio / gr.JSON which need
+   their own internal spacing. */
+.ams-content textarea,
+.ams-content input[type="text"],
+.ams-content input[type="number"] {{
+  background:{SURFACE_STRONG} !important;
+  border:1px solid {BORDER} !important;
+  border-radius:4px !important;
+  color:{INK} !important;
+  padding:10px !important;
+}}
+.ams-content textarea:focus,
+.ams-content input[type="text"]:focus,
+.ams-content input[type="number"]:focus {{
+  outline:none !important;
+  border-color:{PRIMARY} !important;
+}}
+.ams-content input[type="range"] {{
+  accent-color:{PRIMARY} !important;
+}}
+/* Component labels — uppercase, muted, no shadow.
+   ``.gradio-container .block .label`` already covers this from the
+   earlier component-label rule, but restating for the form blocks
+   specifically gives the wireframe a consistent label scale. */
+.ams-content .label-wrap,
+.ams-content [data-testid="block-label"] {{
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+  color:{INK_MUTED} !important;
+  background:transparent !important;
+  border:none !important;
+  padding:0 0 4px 0 !important;
+}}
+
 /* === Component labels — kill the white pill, make them inline muted ==== */
 /* Gradio renders component labels (e.g. gr.Audio "Output", gr.Code
    "Metadata") as elevated white-pill blocks by default. The Brutalist
@@ -258,15 +325,19 @@ footer {{ display:none !important; }}
   /* Real options live in the second .wrap (Gradio renders an extra
      hidden one first); both flex-row + overflow + nowrap.
      CRITICAL: override the desktop label width:100% — that's what
-     makes labels stack vertically inside a flex-row container. */
+     makes labels stack vertically inside a flex-row container.
+     flex-wrap:nowrap forces a single row + horizontal scroll instead
+     of wrapping to 2 rows. */
   .ams-side-radio .wrap {{
     flex-direction:row !important;
+    flex-wrap:nowrap !important;
     overflow-x:auto !important;
     overflow-y:hidden !important;
-    gap:4px !important;
+    gap:6px !important;
     padding-bottom:2px !important;
     /* Hide scrollbar but keep scrolling */
     scrollbar-width:none !important;
+    -ms-overflow-style:none !important;
   }}
   .ams-side-radio .wrap::-webkit-scrollbar {{
     display:none !important;
@@ -279,13 +350,18 @@ footer {{ display:none !important; }}
     max-width:max-content !important;
     flex:0 0 auto !important;
     font-size:11px !important;
+    font-weight:600 !important;
     white-space:nowrap !important;
-    padding:7px 11px !important;
+    padding:8px 12px !important;
     /* Bottom border instead of left border for the horizontal context */
     border-left:none !important;
     border-bottom:2px solid transparent !important;
     border-radius:4px !important;
     justify-content:center !important;
+    background:{SURFACE_STRONG} !important;
+    border-top:1px solid {BORDER} !important;
+    border-right:1px solid {BORDER} !important;
+    border-left:1px solid {BORDER} !important;
   }}
   .ams-side-radio label.selected,
   .ams-side-radio label:has(input[type="radio"]:checked) {{
