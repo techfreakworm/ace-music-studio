@@ -59,15 +59,23 @@ def build_generate_tab() -> dict[str, gr.components.Component]:
             )
 
         # --- OUTPUT column (right, ~40% width) ---
+        # elem_classes on each output component give CSS hooks for the
+        # Brutalist Mono treatment (uppercase mono labels + bordered
+        # empty-state panels). Without these we'd need to target
+        # svelte-hashed classes which can change across Gradio versions.
         with gr.Column(scale=10):
             components["output_audio"] = gr.Audio(
                 label="Output",
                 type="filepath",
                 interactive=False,
+                elem_classes=["ams-out", "ams-out-audio"],
             )
             # gr.JSON renders a dict directly as a syntax-highlighted, expandable
             # tree. gr.Code(language="json") refuses dicts — it requires a
             # pre-stringified blob — and crashes with "'dict' has no .strip()".
-            components["output_meta"] = gr.JSON(label="Metadata")
+            components["output_meta"] = gr.JSON(
+                label="Metadata",
+                elem_classes=["ams-out", "ams-out-meta"],
+            )
 
     return components
