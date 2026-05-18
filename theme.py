@@ -786,6 +786,81 @@ main, .contain {{
   }}
 }}
 
+/* ============================================================
+ * Audio upload widget (Cover / Extend / Edit reference inputs)
+ * Tagged with ``ams-input-audio`` via elem_classes. Match the dark
+ * input chrome so it sits next to the textboxes without contrast
+ * jumps; the gr.Audio drop-button gets the same dashed outline as
+ * the LoRA upload so users recognise it as a drop-zone.
+ * ============================================================ */
+.ams-content .ams-input-audio {{
+  background:{SURFACE_STRONG} !important;
+  border:1px solid {BORDER} !important;
+  border-radius:3px !important;
+  padding:8px !important;
+  margin-bottom:4px !important;
+}}
+.ams-content .ams-input-audio .empty,
+.ams-content .ams-input-audio [class*="empty"] {{
+  min-height:90px !important;
+}}
+.ams-content .ams-input-audio button {{
+  background:#000 !important;
+  border:1px dashed {BORDER_STRONG} !important;
+  border-radius:3px !important;
+  color:{INK_MUTED} !important;
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.04em !important;
+}}
+.ams-content .ams-input-audio button:hover {{
+  border-color:{PRIMARY} !important;
+  color:{INK} !important;
+}}
+.ams-content .ams-input-audio svg {{
+  color:{INK_MUTED} !important;
+  opacity:0.7 !important;
+}}
+
+/* ============================================================
+ * Experimental accordion (Extend / Edit)
+ * Reuse the LoRA accordion's visual chrome so the bordered section
+ * shape is consistent across all accordions, but visually demote
+ * the summary so users can tell these knobs aren't fully wired.
+ * ============================================================ */
+.ams-content .ams-experimental {{
+  border:1px solid {BORDER} !important;
+  border-radius:3px !important;
+  background:{SURFACE_STRONG} !important;
+  margin-top:10px !important;
+  padding:0 !important;
+}}
+.ams-content .ams-experimental > .label-wrap,
+.ams-content .ams-experimental summary,
+.ams-content .ams-experimental > button {{
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+  color:{INK_MUTED} !important;
+  padding:10px 12px !important;
+  background:transparent !important;
+  border:none !important;
+  opacity:0.7 !important;
+}}
+.ams-content .ams-experimental > .label-wrap span,
+.ams-content .ams-experimental summary span,
+.ams-content .ams-experimental > button span {{
+  color:{INK_MUTED} !important;
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+}}
+.ams-content .ams-experimental > div:not(.label-wrap):not(summary) {{
+  padding:0 12px 12px 12px !important;
+}}
+
 /* Hide Gradio footer + the floating "Use via API" / settings panel */
 footer {{ display:none !important; }}
 .show-api {{ display:none !important; }}

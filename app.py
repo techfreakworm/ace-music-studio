@@ -191,6 +191,121 @@ def on_generate_click(
     return out_path, meta
 
 
+def on_cover_click(
+    ref_audio,
+    prompt: str,
+    lyrics: str,
+    duration_s: float,
+    audio_cover_strength: float,
+    lora_state,
+    progress=gr.Progress(track_tqdm=True),  # noqa: B008
+):
+    """Cover-mode click. ref_audio is a filepath from gr.Audio(type='filepath')."""
+    loras = [lora_state] if lora_state else []
+    try:
+        return modes.cover(
+            get_backend(),
+            params={
+                "ref_audio": ref_audio,
+                "prompt": prompt,
+                "lyrics": lyrics,
+                "duration_s": int(duration_s),
+                "audio_cover_strength": float(audio_cover_strength),
+                "seed": random.randint(1, 2_147_483_647),
+                "loras": loras,
+                "advanced": {},
+                "lm": {},
+                "dcw": {},
+            },
+        )
+    except ValueError as e:
+        raise gr.Error(str(e)) from e
+
+
+def on_extend_click(
+    seed_audio,
+    extra_prompt: str,
+    extension_lyrics: str,
+    extra_duration_s: float,
+    wav_crossfade_s: float,
+    repaint_mode: str,
+    repaint_strength: float,
+    latent_crossfade_frames: float,
+    chunk_mask_mode: str,
+    lora_state,
+    progress=gr.Progress(track_tqdm=True),  # noqa: B008
+):
+    """Extend-mode click. seed_audio is a filepath from gr.Audio(type='filepath')."""
+    loras = [lora_state] if lora_state else []
+    try:
+        return modes.extend(
+            get_backend(),
+            params={
+                "seed_audio": seed_audio,
+                "extra_prompt": extra_prompt,
+                "extension_lyrics": extension_lyrics,
+                "extra_duration_s": int(extra_duration_s),
+                "wav_crossfade_s": float(wav_crossfade_s),
+                "repaint_mode": repaint_mode,
+                "repaint_strength": float(repaint_strength),
+                "latent_crossfade_frames": int(latent_crossfade_frames),
+                "chunk_mask_mode": chunk_mask_mode,
+                "seed": random.randint(1, 2_147_483_647),
+                "loras": loras,
+                "advanced": {},
+                "lm": {},
+                "dcw": {},
+            },
+        )
+    except ValueError as e:
+        raise gr.Error(str(e)) from e
+
+
+def on_edit_click(
+    source_audio,
+    sub_mode: str,
+    source_lyrics: str,
+    target_lyrics: str,
+    segment_start_s: float,
+    segment_end_s: float,
+    repaint_strength: float,
+    repaint_mode: str,
+    flow_source_caption: str,
+    flow_n_min: float,
+    flow_n_max: float,
+    flow_n_avg: float,
+    lora_state,
+    progress=gr.Progress(track_tqdm=True),  # noqa: B008
+):
+    """Edit-mode click. source_audio is a filepath from gr.Audio(type='filepath')."""
+    loras = [lora_state] if lora_state else []
+    try:
+        return modes.edit(
+            get_backend(),
+            params={
+                "source_audio": source_audio,
+                "sub_mode": sub_mode,
+                "source_lyrics": source_lyrics,
+                "target_lyrics": target_lyrics,
+                "segment_start_s": float(segment_start_s),
+                "segment_end_s": float(segment_end_s),
+                "repaint_strength": float(repaint_strength),
+                "repaint_mode": repaint_mode,
+                "flow_source_caption": flow_source_caption,
+                "flow_n_min": float(flow_n_min),
+                "flow_n_max": float(flow_n_max),
+                "flow_n_avg": int(flow_n_avg),
+                "seed": random.randint(1, 2_147_483_647),
+                "loras": loras,
+                "advanced": {},
+                "lm": {},
+                "dcw": {},
+            },
+        )
+    except ValueError as e:
+        raise gr.Error(str(e)) from e
+
+
 HEADER_HTML = """
 <div class="ams-header">
   <div>
@@ -300,11 +415,103 @@ def build_app() -> gr.Blocks:
                         outputs=[g["output_audio"], g["output_meta"]],
                     )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_cover:
-                    gr.Markdown("### 🎤 Cover\n\nPlaceholder — implemented in M3.")
+                    c = ui.build_cover_tab()
+                    c["lora_preset"].change(
+                        fn=on_lora_preset_change,
+                        inputs=[c["lora_preset"], c["lora_strength"]],
+                        outputs=[c["lora_state"], c["lora_active"], c["lora_upload"]],
+                    )
+                    c["lora_upload"].change(
+                        fn=on_lora_upload,
+                        inputs=[c["lora_upload"], c["lora_strength"]],
+                        outputs=[c["lora_state"], c["lora_active"], c["lora_preset"]],
+                    )
+                    c["lora_strength"].change(
+                        fn=on_lora_strength_change,
+                        inputs=[c["lora_state"], c["lora_strength"]],
+                        outputs=[c["lora_state"], c["lora_active"]],
+                    )
+                    c["generate_btn"].click(
+                        fn=on_cover_click,
+                        inputs=[
+                            c["ref_audio"],
+                            c["prompt"],
+                            c["lyrics"],
+                            c["duration_s"],
+                            c["audio_cover_strength"],
+                            c["lora_state"],
+                        ],
+                        outputs=[c["output_audio"], c["output_meta"]],
+                    )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_extend:
-                    gr.Markdown("### ⏩ Extend\n\nPlaceholder — implemented in M3.")
+                    x = ui.build_extend_tab()
+                    x["lora_preset"].change(
+                        fn=on_lora_preset_change,
+                        inputs=[x["lora_preset"], x["lora_strength"]],
+                        outputs=[x["lora_state"], x["lora_active"], x["lora_upload"]],
+                    )
+                    x["lora_upload"].change(
+                        fn=on_lora_upload,
+                        inputs=[x["lora_upload"], x["lora_strength"]],
+                        outputs=[x["lora_state"], x["lora_active"], x["lora_preset"]],
+                    )
+                    x["lora_strength"].change(
+                        fn=on_lora_strength_change,
+                        inputs=[x["lora_state"], x["lora_strength"]],
+                        outputs=[x["lora_state"], x["lora_active"]],
+                    )
+                    x["generate_btn"].click(
+                        fn=on_extend_click,
+                        inputs=[
+                            x["seed_audio"],
+                            x["extra_prompt"],
+                            x["extension_lyrics"],
+                            x["extra_duration_s"],
+                            x["wav_crossfade_s"],
+                            x["repaint_mode"],
+                            x["repaint_strength"],
+                            x["latent_crossfade_frames"],
+                            x["chunk_mask_mode"],
+                            x["lora_state"],
+                        ],
+                        outputs=[x["output_audio"], x["output_meta"]],
+                    )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_edit:
-                    gr.Markdown("### ✏️ Edit\n\nPlaceholder — implemented in M3.")
+                    e = ui.build_edit_tab()
+                    e["lora_preset"].change(
+                        fn=on_lora_preset_change,
+                        inputs=[e["lora_preset"], e["lora_strength"]],
+                        outputs=[e["lora_state"], e["lora_active"], e["lora_upload"]],
+                    )
+                    e["lora_upload"].change(
+                        fn=on_lora_upload,
+                        inputs=[e["lora_upload"], e["lora_strength"]],
+                        outputs=[e["lora_state"], e["lora_active"], e["lora_preset"]],
+                    )
+                    e["lora_strength"].change(
+                        fn=on_lora_strength_change,
+                        inputs=[e["lora_state"], e["lora_strength"]],
+                        outputs=[e["lora_state"], e["lora_active"]],
+                    )
+                    e["generate_btn"].click(
+                        fn=on_edit_click,
+                        inputs=[
+                            e["source_audio"],
+                            e["sub_mode"],
+                            e["source_lyrics"],
+                            e["target_lyrics"],
+                            e["segment_start_s"],
+                            e["segment_end_s"],
+                            e["repaint_strength"],
+                            e["repaint_mode"],
+                            e["flow_source_caption"],
+                            e["flow_n_min"],
+                            e["flow_n_max"],
+                            e["flow_n_avg"],
+                            e["lora_state"],
+                        ],
+                        outputs=[e["output_audio"], e["output_meta"]],
+                    )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_lyrics:
                     gr.Markdown("### ✍️ Lyrics\n\nPlaceholder — implemented in M4.")
 

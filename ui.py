@@ -16,15 +16,91 @@ import lora_stack
 import tooltips
 
 
+def _build_lora_accordion(components: dict[str, gr.components.Component]) -> None:
+    """LoRA accordion with single-LoRA semantics. Mutates ``components``.
+
+    Each song mode (generate / cover / extend / edit) calls this so the
+    form has a consistent LoRA picker. Apple-Silicon ACE-Step fork's
+    AceStepHandler can only hold one active adapter at a time (see
+    ``lora_stack.apply_stack``), so the UI surfaces a single slot — a
+    preset radio OR a custom upload — and a strength slider, with a
+    Markdown "active LoRA" display.
+    """
+    with gr.Accordion(
+        label="LoRA",
+        open=False,
+        elem_classes=["ams-lora", "ams-lora-accordion"],
+    ):
+        gr.Markdown(
+            "_Only one LoRA at a time on this build. "
+            "Picking a preset or uploading a custom file "
+            "replaces the active LoRA._",
+            elem_classes=["ams-lora-note"],
+        )
+        # Preset choices are read from presets/manifest.json so the
+        # radio stays in sync with whatever official ACE-Step LoRAs
+        # are actually published on HuggingFace.
+        _preset_names = ["None"] + [p["name"] for p in lora_stack.load_presets()]
+        components["lora_preset"] = gr.Radio(
+            choices=_preset_names,
+            value="None",
+            label="Preset",
+            elem_classes=["ams-lora-preset"],
+            interactive=True,
+        )
+        components["lora_upload"] = gr.File(
+            label="Custom LoRA (.safetensors)",
+            file_types=[".safetensors"],
+            file_count="single",
+            elem_classes=["ams-lora-file"],
+        )
+        components["lora_strength"] = gr.Slider(
+            minimum=0.0,
+            maximum=1.5,
+            step=0.05,
+            value=0.95,
+            label="Strength",
+            elem_classes=["ams-lora-strength"],
+        )
+        components["lora_active"] = gr.Markdown(
+            "_No LoRA active_",
+            elem_classes=["ams-lora-active"],
+        )
+        # Hidden state holding the resolved active LoRA dict
+        # ``{name, scale, path, sha256}`` so the click handler can pass
+        # it straight to backend.dispatch.
+        components["lora_state"] = gr.State(None)
+
+
+def _build_output_panel(components: dict[str, gr.components.Component]) -> None:
+    """Shared OUTPUT (gr.Audio) + METADATA (gr.JSON) bordered panels.
+
+    elem_classes on each output component give CSS hooks for the
+    Brutalist Mono treatment (uppercase mono labels + bordered
+    empty-state panels). Without these we'd need to target
+    svelte-hashed classes which can change across Gradio versions.
+
+    gr.JSON renders a dict directly as a syntax-highlighted, expandable
+    tree. gr.Code(language="json") refuses dicts — it requires a
+    pre-stringified blob — and crashes with "'dict' has no .strip()".
+    """
+    components["output_audio"] = gr.Audio(
+        label="Output",
+        type="filepath",
+        interactive=False,
+        elem_classes=["ams-out", "ams-out-audio"],
+    )
+    components["output_meta"] = gr.JSON(
+        label="Metadata",
+        elem_classes=["ams-out", "ams-out-meta"],
+    )
+
+
 def build_generate_tab() -> dict[str, gr.components.Component]:
     """Generate tab body: 2-column row (form left, output right).
 
     Includes a single-LoRA picker in a collapsed accordion between the
-    duration/vocal-mode row and the Generate button. The Apple-Silicon
-    ACE-Step fork's AceStepHandler only supports one active LoRA at a
-    time (see ``lora_stack.apply_stack`` for the gory details), so the
-    UI surfaces a single slot — a preset radio OR a custom upload — and
-    a strength slider, with a Markdown "active LoRA" display.
+    duration/vocal-mode row and the Generate button.
 
     Advanced / LM-planner / DCW accordions are deferred to M2-M4 and
     will be added by extending this builder.
@@ -62,54 +138,7 @@ def build_generate_tab() -> dict[str, gr.components.Component]:
                     info=tooltips.GENERATE_VOCAL,
                 )
 
-            # --- LoRA accordion (collapsed by default) ---
-            # Single-LoRA-slot UI: the apple-silicon fork's AceStepHandler
-            # can only hold one active adapter, so multi-row stacks are
-            # deferred until upstream lands multi-adapter support.
-            with gr.Accordion(
-                label="LoRA",
-                open=False,
-                elem_classes=["ams-lora", "ams-lora-accordion"],
-            ):
-                gr.Markdown(
-                    "_Only one LoRA at a time on this build. "
-                    "Picking a preset or uploading a custom file "
-                    "replaces the active LoRA._",
-                    elem_classes=["ams-lora-note"],
-                )
-                # Preset choices are read from presets/manifest.json so the
-                # radio stays in sync with whatever official ACE-Step LoRAs
-                # are actually published on HuggingFace.
-                _preset_names = ["None"] + [p["name"] for p in lora_stack.load_presets()]
-                components["lora_preset"] = gr.Radio(
-                    choices=_preset_names,
-                    value="None",
-                    label="Preset",
-                    elem_classes=["ams-lora-preset"],
-                    interactive=True,
-                )
-                components["lora_upload"] = gr.File(
-                    label="Custom LoRA (.safetensors)",
-                    file_types=[".safetensors"],
-                    file_count="single",
-                    elem_classes=["ams-lora-file"],
-                )
-                components["lora_strength"] = gr.Slider(
-                    minimum=0.0,
-                    maximum=1.5,
-                    step=0.05,
-                    value=0.95,
-                    label="Strength",
-                    elem_classes=["ams-lora-strength"],
-                )
-                components["lora_active"] = gr.Markdown(
-                    "_No LoRA active_",
-                    elem_classes=["ams-lora-active"],
-                )
-                # Hidden state holding the resolved active LoRA dict
-                # ``{name, scale, path, sha256}`` so on_generate_click
-                # can pass it straight to backend.dispatch.
-                components["lora_state"] = gr.State(None)
+            _build_lora_accordion(components)
 
             components["generate_btn"] = gr.Button(
                 "▶ Generate",
@@ -117,23 +146,275 @@ def build_generate_tab() -> dict[str, gr.components.Component]:
             )
 
         # --- OUTPUT column (right, ~40% width) ---
-        # elem_classes on each output component give CSS hooks for the
-        # Brutalist Mono treatment (uppercase mono labels + bordered
-        # empty-state panels). Without these we'd need to target
-        # svelte-hashed classes which can change across Gradio versions.
         with gr.Column(scale=10):
-            components["output_audio"] = gr.Audio(
-                label="Output",
+            _build_output_panel(components)
+
+    return components
+
+
+def build_cover_tab() -> dict[str, gr.components.Component]:
+    """Cover tab body: reference audio + new lyrics -> cover in that style.
+
+    Maps to ACE-Step's ``task_type="cover"`` with the uploaded reference
+    feeding ``reference_audio`` and the strength slider controlling
+    ``audio_cover_strength``. Higher strength clings to the reference;
+    lower lets the new prompt/lyrics drift the timbre.
+    """
+    components: dict[str, gr.components.Component] = {}
+    with gr.Row():
+        with gr.Column(scale=13):
+            components["ref_audio"] = gr.Audio(
+                label="Reference audio",
                 type="filepath",
-                interactive=False,
-                elem_classes=["ams-out", "ams-out-audio"],
+                sources=["upload"],
+                elem_classes=["ams-input-audio"],
             )
-            # gr.JSON renders a dict directly as a syntax-highlighted, expandable
-            # tree. gr.Code(language="json") refuses dicts — it requires a
-            # pre-stringified blob — and crashes with "'dict' has no .strip()".
-            components["output_meta"] = gr.JSON(
-                label="Metadata",
-                elem_classes=["ams-out", "ams-out-meta"],
+            components["prompt"] = gr.Textbox(
+                label="New style prompt (optional)",
+                placeholder="faster, more aggressive leads",
+                lines=2,
             )
+            components["lyrics"] = gr.Textbox(
+                label="New lyrics",
+                placeholder="[verse] new lyrics over the reference style",
+                lines=5,
+            )
+            with gr.Row():
+                components["duration_s"] = gr.Slider(
+                    minimum=5,
+                    maximum=240,
+                    step=5,
+                    value=30,
+                    label="Duration (s)",
+                )
+                components["audio_cover_strength"] = gr.Slider(
+                    minimum=0.0,
+                    maximum=1.0,
+                    step=0.01,
+                    value=0.93,
+                    label="Cover strength",
+                    info="Higher = closer to reference. Lower = more drift.",
+                )
+
+            _build_lora_accordion(components)
+
+            components["generate_btn"] = gr.Button(
+                "▶ Generate cover",
+                variant="primary",
+            )
+
+        with gr.Column(scale=10):
+            _build_output_panel(components)
+
+    return components
+
+
+def build_extend_tab() -> dict[str, gr.components.Component]:
+    """Extend tab body: seed audio + extension prompt -> continued song.
+
+    Maps to ACE-Step's ``task_type="repaint"`` with ``src_audio`` set to
+    the uploaded seed and the repaint window pointing past the end of
+    the seed so the model paints new audio after it.
+
+    The repaint params (``repaint_mode``, ``repaint_strength``,
+    ``latent_crossfade_frames``, ``chunk_mask_mode``, ``wav_crossfade_s``)
+    are surfaced in an experimental accordion because the installed
+    ACE-Step ``GenerationParams`` dataclass doesn't expose them yet — the
+    UI captures them so they're ready to plumb through once upstream
+    adds the fields.
+    """
+    components: dict[str, gr.components.Component] = {}
+    with gr.Row():
+        with gr.Column(scale=13):
+            components["seed_audio"] = gr.Audio(
+                label="Seed audio",
+                type="filepath",
+                sources=["upload"],
+                elem_classes=["ams-input-audio"],
+            )
+            components["extra_prompt"] = gr.Textbox(
+                label="Extension prompt",
+                placeholder="build to climax, layered acid leads",
+                lines=2,
+            )
+            components["extension_lyrics"] = gr.Textbox(
+                label="Extension lyrics (optional)",
+                placeholder="[bridge] the drop is coming...",
+                lines=4,
+            )
+            with gr.Row():
+                components["extra_duration_s"] = gr.Slider(
+                    minimum=5,
+                    maximum=120,
+                    step=5,
+                    value=60,
+                    label="Extra duration (s)",
+                )
+                components["wav_crossfade_s"] = gr.Slider(
+                    minimum=0.0,
+                    maximum=5.0,
+                    step=0.1,
+                    value=2.0,
+                    label="WAV crossfade (s)",
+                    info="Experimental — not yet wired in this acestep build.",
+                )
+
+            with gr.Accordion(
+                "Repaint params (experimental)",
+                open=False,
+                elem_classes=["ams-experimental"],
+            ):
+                gr.Markdown(
+                    "_These knobs are captured in the request but the installed "
+                    "ACE-Step dataclass doesn't expose them yet._",
+                    elem_classes=["ams-lora-note"],
+                )
+                components["repaint_mode"] = gr.Dropdown(
+                    choices=["balanced", "left", "right"],
+                    value="balanced",
+                    label="Repaint mode",
+                )
+                components["repaint_strength"] = gr.Slider(
+                    minimum=0.0,
+                    maximum=1.0,
+                    step=0.05,
+                    value=0.5,
+                    label="Repaint strength",
+                )
+                components["latent_crossfade_frames"] = gr.Slider(
+                    minimum=0,
+                    maximum=30,
+                    step=1,
+                    value=10,
+                    label="Latent crossfade frames",
+                )
+                components["chunk_mask_mode"] = gr.Dropdown(
+                    choices=["auto", "manual"],
+                    value="auto",
+                    label="Chunk mask",
+                )
+
+            _build_lora_accordion(components)
+
+            components["generate_btn"] = gr.Button(
+                "▶ Extend",
+                variant="primary",
+            )
+
+        with gr.Column(scale=10):
+            _build_output_panel(components)
+
+    return components
+
+
+def build_edit_tab() -> dict[str, gr.components.Component]:
+    """Edit tab body: source audio + segment + target lyrics -> repaint/morph.
+
+    Two sub-modes:
+
+    - ``repaint`` (default): paint over [segment_start_s, segment_end_s]
+      using ACE-Step's repaint task_type. ``segment_start_s`` and
+      ``segment_end_s`` are wired through the params dict to
+      ``repainting_start`` / ``repainting_end`` on the pipeline side.
+    - ``flow_edit``: caption-to-caption morph. The installed ACE-Step
+      ``GenerationParams`` has no ``flow_edit_*`` fields, so this
+      sub-mode falls back to a repaint pass with lower
+      ``audio_cover_strength``. The flow knobs are still captured so
+      they're ready once upstream adds native support.
+    """
+    components: dict[str, gr.components.Component] = {}
+    with gr.Row():
+        with gr.Column(scale=13):
+            components["source_audio"] = gr.Audio(
+                label="Source audio",
+                type="filepath",
+                sources=["upload"],
+                elem_classes=["ams-input-audio"],
+            )
+            components["sub_mode"] = gr.Radio(
+                choices=["repaint", "flow_edit"],
+                value="repaint",
+                label="Edit sub-mode",
+                info=(
+                    "repaint: regenerate the segment from new lyrics. "
+                    "flow_edit: morph caption-to-caption (experimental)."
+                ),
+            )
+            components["source_lyrics"] = gr.Textbox(
+                label="Source lyrics",
+                lines=3,
+            )
+            components["target_lyrics"] = gr.Textbox(
+                label="Target lyrics",
+                placeholder="[chorus] new chorus replaces the old",
+                lines=3,
+            )
+            with gr.Row():
+                components["segment_start_s"] = gr.Number(
+                    value=0.0,
+                    label="Segment start (s)",
+                    precision=1,
+                )
+                components["segment_end_s"] = gr.Number(
+                    value=30.0,
+                    label="Segment end (s)",
+                    precision=1,
+                )
+
+            with gr.Accordion(
+                "Repaint options (experimental)",
+                open=False,
+                elem_classes=["ams-experimental"],
+            ):
+                gr.Markdown(
+                    "_These knobs are captured in the request but the installed "
+                    "ACE-Step dataclass doesn't expose them yet._",
+                    elem_classes=["ams-lora-note"],
+                )
+                components["repaint_strength"] = gr.Slider(
+                    minimum=0.0,
+                    maximum=1.0,
+                    step=0.05,
+                    value=0.5,
+                    label="Repaint strength",
+                )
+                components["repaint_mode"] = gr.Dropdown(
+                    choices=["balanced", "left", "right"],
+                    value="balanced",
+                    label="Repaint mode",
+                )
+
+            with gr.Accordion(
+                "Flow-morph options (experimental)",
+                open=False,
+                elem_classes=["ams-experimental"],
+            ):
+                gr.Markdown(
+                    "_flow_edit sub-mode currently falls back to a repaint pass with "
+                    "lower audio_cover_strength. flow-specific params are captured "
+                    "but not yet wired._",
+                    elem_classes=["ams-lora-note"],
+                )
+                components["flow_source_caption"] = gr.Textbox(
+                    label="Source caption",
+                    placeholder="acoustic ballad, gentle piano",
+                )
+                components["flow_n_min"] = gr.Slider(
+                    minimum=0.0, maximum=1.0, value=0.0, step=0.05, label="n_min"
+                )
+                components["flow_n_max"] = gr.Slider(
+                    minimum=0.0, maximum=1.0, value=1.0, step=0.05, label="n_max"
+                )
+                components["flow_n_avg"] = gr.Slider(minimum=1, maximum=5, value=1, step=1, label="n_avg")
+
+            _build_lora_accordion(components)
+
+            components["generate_btn"] = gr.Button(
+                "▶ Apply edit",
+                variant="primary",
+            )
+
+        with gr.Column(scale=10):
+            _build_output_panel(components)
 
     return components
