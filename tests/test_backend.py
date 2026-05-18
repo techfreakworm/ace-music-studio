@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 import backend as be
 
 
@@ -98,3 +100,49 @@ def test_dispatch_applies_lora_stack(monkeypatch, tmp_path):
     )
 
     apply_mock.assert_called_once_with(fake_pipe, stack)
+
+
+@pytest.mark.parametrize(
+    "mode,extra",
+    [
+        ("cover", {"ref_audio": "/tmp/ref.wav", "audio_cover_strength": 0.9}),
+        ("extend", {"seed_audio": "/tmp/seed.wav", "extra_duration_s": 60}),
+        (
+            "edit",
+            {
+                "source_audio": "/tmp/src.wav",
+                "segment_start_s": 50.0,
+                "segment_end_s": 90.0,
+                "sub_mode": "repaint",
+            },
+        ),
+    ],
+)
+def test_dispatch_forwards_mode_to_pipe_generate(monkeypatch, tmp_path, mode, extra):
+    fake_pipe = MagicMock()
+    fake_pipe.generate.return_value = str(tmp_path / "x.wav")
+    (tmp_path / "x.wav").write_bytes(b"RIFF")
+    monkeypatch.setattr("ace_pipeline.get_pipeline", lambda: fake_pipe)
+    monkeypatch.setattr("lora_stack.apply_stack", MagicMock())
+
+    b = be.ACEStepStudioBackend()
+    params = {
+        "prompt": "p",
+        "lyrics": "",
+        "duration_s": 10,
+        "instrumental": True,
+        "seed": 42,
+        "loras": [],
+        "advanced": {},
+        "lm": {},
+        "dcw": {},
+        **extra,
+    }
+    b.dispatch(mode=mode, params=params)
+
+    fake_pipe.generate.assert_called_once()
+    sent_params = fake_pipe.generate.call_args.args[0]
+    assert sent_params["mode"] == mode
+    # Mode-specific keys propagate to pipe.generate
+    for k, v in extra.items():
+        assert sent_params[k] == v

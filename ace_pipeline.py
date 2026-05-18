@@ -135,12 +135,30 @@ class ACEStepStudio:
         self._llm = llm
 
     def generate(self, params: dict) -> str:
-        """Run a single text→song generation.
+        """Run a single song generation across all four modes.
 
-        ``params`` is the dict produced by ``modes.generate``:
-        ``{"prompt", "lyrics", "duration_s", "instrumental", "seed",
-        "loras", "advanced", "lm", "dcw"}``. Returns the path to the
-        produced audio file.
+        ``params`` is the dict produced by the mode handlers in ``modes.py``.
+        The ``params["mode"]`` key (``generate`` | ``cover`` | ``extend`` |
+        ``edit``) selects the ACE-Step ``task_type`` and which audio inputs
+        get wired through to ``GenerationParams``:
+
+        - ``generate``: ``task_type="text2music"``
+        - ``cover``:    ``task_type="cover"`` + ``reference_audio`` +
+          ``audio_cover_strength``
+        - ``extend``:   ``task_type="repaint"`` + ``src_audio`` set to the
+          seed, with ``repainting_start=-1`` / ``repainting_end=-1`` as a
+          sentinel meaning "paint after the end of the seed". The actual
+          mask shaping ultimately lives inside ACE-Step's repaint path.
+        - ``edit``:     ``task_type="repaint"`` + ``src_audio`` + explicit
+          ``[segment_start_s, segment_end_s]`` segment bounds.
+
+        Flow-edit (``sub_mode="flow_edit"``) is implemented as a repaint
+        pass: the installed ACE-Step ``GenerationParams`` dataclass has no
+        native ``flow_edit_*`` fields, so the extra flow-edit knobs carried
+        in the internal params dict are ignored at the ``GenerationParams``
+        instantiation level and will need wiring once upstream grows them.
+
+        Returns the path to the produced audio file.
         """
         self._ensure_loaded()
 
@@ -152,20 +170,68 @@ class ACEStepStudio:
 
         advanced = params.get("advanced", {}) or {}
         lm_opts = params.get("lm", {}) or {}
+        mode = params.get("mode", "generate")
 
         # Map our internal dict to ACE-Step's GenerationParams.
         # Lyrics "[Instrumental]" is the ACE-Step convention for instrumental.
-        lyrics = params.get("lyrics", "") or ""
+        lyrics = params.get("lyrics", "") or params.get("extension_lyrics", "") or ""
+        if mode == "edit":
+            lyrics = params.get("target_lyrics", "") or lyrics
         instrumental = bool(params.get("instrumental", False))
         if instrumental and not lyrics:
             lyrics = "[Instrumental]"
 
+        # Mode-specific task_type + audio inputs.
+        # All five fields below MUST resolve before we instantiate
+        # GenerationParams so that the dataclass ctor sees consistent values.
+        ref_audio: str | None = None
+        src_audio: str | None = None
+        audio_cover_strength = 0.0
+        repainting_start = 0.0
+        repainting_end = -1.0
+
+        if mode == "generate":
+            task_type = "text2music"
+        elif mode == "cover":
+            task_type = "cover"
+            ref_audio = params.get("ref_audio")
+            audio_cover_strength = float(params.get("audio_cover_strength", 0.93))
+        elif mode == "extend":
+            task_type = "repaint"
+            src_audio = params.get("seed_audio")
+            # Sentinel: -1 / -1 means "append after the seed audio's end".
+            # ACE-Step's repaint path interprets these bounds against the
+            # src_audio duration; the actual semantics need verifying once
+            # we run a full pass on real hardware (M3 GPU smoke).
+            repainting_start = -1.0
+            repainting_end = -1.0
+        elif mode == "edit":
+            task_type = "repaint"
+            src_audio = params.get("source_audio")
+            repainting_start = float(params.get("segment_start_s", 0.0))
+            repainting_end = float(params.get("segment_end_s", 30.0))
+            # flow_edit sub-mode: lower audio_cover_strength to allow style
+            # drift while still using the repaint task type. The extra
+            # flow_* fields in our internal params dict are kept around for
+            # future use but not forwarded to GenerationParams (no native
+            # support in the installed dataclass).
+            if params.get("sub_mode") == "flow_edit":
+                audio_cover_strength = 0.3
+        else:
+            raise ValueError(f"Unknown mode: {mode!r}")
+
+        # Caption can come from the per-mode handlers under different keys.
+        caption = (
+            params.get("prompt") or params.get("extra_prompt") or params.get("flow_source_caption") or ""
+        )
+        duration_s = int(params.get("duration_s") or params.get("extra_duration_s") or 30)
+
         gen_params = GenerationParams(
-            task_type="text2music",
-            caption=params.get("prompt", ""),
+            task_type=task_type,
+            caption=caption,
             lyrics=lyrics,
             instrumental=instrumental,
-            duration=int(params.get("duration_s", 30)),
+            duration=duration_s,
             seed=int(params.get("seed", -1)),
             inference_steps=int(advanced.get("steps", 32)),
             guidance_scale=float(advanced.get("cfg", 4.0)),
@@ -176,6 +242,13 @@ class ACEStepStudio:
             vocal_language=advanced.get("vocal_language", "unknown"),
             cfg_interval_start=float(advanced.get("cfg_interval_start", 0.0)),
             cfg_interval_end=float(advanced.get("cfg_interval_end", 1.0)),
+            # Mode-specific audio inputs + repaint bounds
+            reference_audio=ref_audio,
+            src_audio=src_audio,
+            audio_cover_strength=audio_cover_strength,
+            repainting_start=repainting_start,
+            repainting_end=repainting_end,
+            # 5Hz language model knobs
             thinking=bool(lm_opts.get("thinking", False)),
             lm_temperature=float(lm_opts.get("temperature", 0.85)),
             lm_cfg_scale=float(lm_opts.get("cfg", 2.0)),

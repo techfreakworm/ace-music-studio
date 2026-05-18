@@ -77,10 +77,13 @@ class ACEStepStudioBackend:
         ``generate(params)`` method that handles the underlying
         AceStepHandler + LLMHandler + generate_music plumbing.
 
-        Cover / Extend / Edit / Lyrics task_types are mapped here at
-        M3 / M4 by switching ``params["task_type"]`` before calling.
+        All four song modes (``generate``, ``cover``, ``extend``, ``edit``)
+        flow through ``pipe.generate(params)``. The pipeline wrapper
+        switches its ``GenerationParams.task_type`` based on ``params["mode"]``
+        — see ``ace_pipeline.ACEStepStudio.generate`` for the mapping. The
+        ``lyrics`` mode is wired separately at M4.
         """
-        if mode == "generate":
-            return pipe.generate(params)
-        # cover / extend / edit / lyrics get filled in at M3 / M4
+        if mode in ("generate", "cover", "extend", "edit"):
+            params_with_mode = {**params, "mode": mode}
+            return pipe.generate(params_with_mode)
         raise NotImplementedError(f"Mode {mode!r} is not wired yet")
