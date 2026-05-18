@@ -67,6 +67,33 @@ def get_backend() -> be.ACEStepStudioBackend:
     return _BACKEND
 
 
+def _safe_call(fn, *args, **kwargs):
+    """Wrap a mode handler so all known exceptions become friendly gr.Error toasts.
+
+    Centralising this here lets every on_*_click handler stay a single-line
+    call into modes.* without each one repeating the try/except mosaic. The
+    error classes mirror what each mode handler can actually raise:
+
+    - ``lora_stack.LoRAValidationError`` — uploaded LoRA isn't compatible
+    - ``ValueError`` — mode-handler param validation (missing prompt, etc.)
+    - ``FileNotFoundError`` — user-supplied ref_audio path doesn't exist
+    - ``RuntimeError`` — pipeline crash, including MPS op-fallback failures
+    """
+    try:
+        return fn(*args, **kwargs)
+    except lora_stack.LoRAValidationError as e:
+        raise gr.Error(str(e)) from e
+    except ValueError as e:
+        raise gr.Error(str(e)) from e
+    except FileNotFoundError as e:
+        raise gr.Error(f"File not found: {e}") from e
+    except RuntimeError as e:
+        msg = str(e)
+        if "MPS" in msg or "mps" in msg:
+            raise gr.Error(f"Apple Silicon op issue: {msg}. PYTORCH_ENABLE_MPS_FALLBACK is enabled.") from e
+        raise gr.Error(f"Generation failed: {msg}") from e
+
+
 def _sha256(path: str) -> str:
     """Stream a file through SHA-256 in 64 KB chunks.
 
@@ -172,24 +199,23 @@ def on_generate_click(
     progress=gr.Progress(track_tqdm=True),  # noqa: B008
 ):
     loras = [lora_state] if lora_state else []
-    try:
-        out_path, meta = modes.generate(
-            get_backend(),
-            params={
-                "prompt": prompt,
-                "lyrics": lyrics,
-                "duration_s": int(duration_s),
-                "instrumental": instrumental_label == "Instrumental",
-                "seed": random.randint(1, 2_147_483_647),
-                "loras": loras,
-                "advanced": {},
-                "lm": {},
-                "dcw": {},
-            },
-        )
-    except ValueError as e:
-        raise gr.Error(str(e)) from e
-    return out_path, meta
+    out_path, meta = _safe_call(
+        modes.generate,
+        get_backend(),
+        params={
+            "prompt": prompt,
+            "lyrics": lyrics,
+            "duration_s": int(duration_s),
+            "instrumental": instrumental_label == "Instrumental",
+            "seed": random.randint(1, 2_147_483_647),
+            "loras": loras,
+            "advanced": {},
+            "lm": {},
+            "dcw": {},
+        },
+    )
+    new_history = _history_push("generate", prompt or "(no prompt)")
+    return out_path, meta, new_history
 
 
 def on_cover_click(
@@ -203,24 +229,24 @@ def on_cover_click(
 ):
     """Cover-mode click. ref_audio is a filepath from gr.Audio(type='filepath')."""
     loras = [lora_state] if lora_state else []
-    try:
-        return modes.cover(
-            get_backend(),
-            params={
-                "ref_audio": ref_audio,
-                "prompt": prompt,
-                "lyrics": lyrics,
-                "duration_s": int(duration_s),
-                "audio_cover_strength": float(audio_cover_strength),
-                "seed": random.randint(1, 2_147_483_647),
-                "loras": loras,
-                "advanced": {},
-                "lm": {},
-                "dcw": {},
-            },
-        )
-    except ValueError as e:
-        raise gr.Error(str(e)) from e
+    out_path, meta = _safe_call(
+        modes.cover,
+        get_backend(),
+        params={
+            "ref_audio": ref_audio,
+            "prompt": prompt,
+            "lyrics": lyrics,
+            "duration_s": int(duration_s),
+            "audio_cover_strength": float(audio_cover_strength),
+            "seed": random.randint(1, 2_147_483_647),
+            "loras": loras,
+            "advanced": {},
+            "lm": {},
+            "dcw": {},
+        },
+    )
+    new_history = _history_push("cover", prompt or "(cover)")
+    return out_path, meta, new_history
 
 
 def on_extend_click(
@@ -238,28 +264,28 @@ def on_extend_click(
 ):
     """Extend-mode click. seed_audio is a filepath from gr.Audio(type='filepath')."""
     loras = [lora_state] if lora_state else []
-    try:
-        return modes.extend(
-            get_backend(),
-            params={
-                "seed_audio": seed_audio,
-                "extra_prompt": extra_prompt,
-                "extension_lyrics": extension_lyrics,
-                "extra_duration_s": int(extra_duration_s),
-                "wav_crossfade_s": float(wav_crossfade_s),
-                "repaint_mode": repaint_mode,
-                "repaint_strength": float(repaint_strength),
-                "latent_crossfade_frames": int(latent_crossfade_frames),
-                "chunk_mask_mode": chunk_mask_mode,
-                "seed": random.randint(1, 2_147_483_647),
-                "loras": loras,
-                "advanced": {},
-                "lm": {},
-                "dcw": {},
-            },
-        )
-    except ValueError as e:
-        raise gr.Error(str(e)) from e
+    out_path, meta = _safe_call(
+        modes.extend,
+        get_backend(),
+        params={
+            "seed_audio": seed_audio,
+            "extra_prompt": extra_prompt,
+            "extension_lyrics": extension_lyrics,
+            "extra_duration_s": int(extra_duration_s),
+            "wav_crossfade_s": float(wav_crossfade_s),
+            "repaint_mode": repaint_mode,
+            "repaint_strength": float(repaint_strength),
+            "latent_crossfade_frames": int(latent_crossfade_frames),
+            "chunk_mask_mode": chunk_mask_mode,
+            "seed": random.randint(1, 2_147_483_647),
+            "loras": loras,
+            "advanced": {},
+            "lm": {},
+            "dcw": {},
+        },
+    )
+    new_history = _history_push("extend", extra_prompt or "(extend)")
+    return out_path, meta, new_history
 
 
 def on_draft_lyrics(
@@ -283,27 +309,27 @@ def on_draft_lyrics(
     ``lyrics_lm``; the first click triggers a ~4 GB MLX download (cached
     afterwards) and ~30 s warm-up before the draft appears.
     """
-    try:
-        return modes.lyrics(
-            get_backend(),
-            params={
-                "brief": brief,
-                "structure": structure,
-                "language": language,
-                "tone": tone,
-                "verse_lines": int(verse_lines),
-                "chorus_lines": int(chorus_lines),
-                "bridge_lines": int(bridge_lines),
-                "rhyme": rhyme,
-                "temperature": float(temperature),
-                "top_p": float(top_p),
-                "top_k": int(top_k),
-                "max_new_tokens": int(max_new_tokens),
-                "seed": int(seed) if seed is not None else None,
-            },
-        )
-    except ValueError as e:
-        raise gr.Error(str(e)) from e
+    lyrics_text, meta = _safe_call(
+        modes.lyrics,
+        get_backend(),
+        params={
+            "brief": brief,
+            "structure": structure,
+            "language": language,
+            "tone": tone,
+            "verse_lines": int(verse_lines),
+            "chorus_lines": int(chorus_lines),
+            "bridge_lines": int(bridge_lines),
+            "rhyme": rhyme,
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+            "top_k": int(top_k),
+            "max_new_tokens": int(max_new_tokens),
+            "seed": int(seed) if seed is not None else None,
+        },
+    )
+    new_history = _history_push("lyrics", brief or "(brief)")
+    return lyrics_text, meta, new_history
 
 
 def on_separate_stems(audio_path):
@@ -357,31 +383,31 @@ def on_edit_click(
 ):
     """Edit-mode click. source_audio is a filepath from gr.Audio(type='filepath')."""
     loras = [lora_state] if lora_state else []
-    try:
-        return modes.edit(
-            get_backend(),
-            params={
-                "source_audio": source_audio,
-                "sub_mode": sub_mode,
-                "source_lyrics": source_lyrics,
-                "target_lyrics": target_lyrics,
-                "segment_start_s": float(segment_start_s),
-                "segment_end_s": float(segment_end_s),
-                "repaint_strength": float(repaint_strength),
-                "repaint_mode": repaint_mode,
-                "flow_source_caption": flow_source_caption,
-                "flow_n_min": float(flow_n_min),
-                "flow_n_max": float(flow_n_max),
-                "flow_n_avg": int(flow_n_avg),
-                "seed": random.randint(1, 2_147_483_647),
-                "loras": loras,
-                "advanced": {},
-                "lm": {},
-                "dcw": {},
-            },
-        )
-    except ValueError as e:
-        raise gr.Error(str(e)) from e
+    out_path, meta = _safe_call(
+        modes.edit,
+        get_backend(),
+        params={
+            "source_audio": source_audio,
+            "sub_mode": sub_mode,
+            "source_lyrics": source_lyrics,
+            "target_lyrics": target_lyrics,
+            "segment_start_s": float(segment_start_s),
+            "segment_end_s": float(segment_end_s),
+            "repaint_strength": float(repaint_strength),
+            "repaint_mode": repaint_mode,
+            "flow_source_caption": flow_source_caption,
+            "flow_n_min": float(flow_n_min),
+            "flow_n_max": float(flow_n_max),
+            "flow_n_avg": int(flow_n_avg),
+            "seed": random.randint(1, 2_147_483_647),
+            "loras": loras,
+            "advanced": {},
+            "lm": {},
+            "dcw": {},
+        },
+    )
+    new_history = _history_push("edit", target_lyrics or sub_mode or "(edit)")
+    return out_path, meta, new_history
 
 
 HEADER_HTML = """
@@ -425,6 +451,41 @@ HISTORY_HTML = """
 """.strip()
 
 
+# --- In-memory history (M6/H2) ----------------------------------------------
+# Per spec §13, persistent history is out of scope for v1. The sidebar block
+# is an in-process list that lives for the lifetime of the Gradio process and
+# resets on reload. Newest entries first; capped at _HISTORY_MAX so the
+# bordered sidebar stays compact at the desktop breakpoint.
+_HISTORY: list[dict] = []
+_HISTORY_MAX = 12
+
+
+def _history_render() -> str:
+    """Render _HISTORY into the sidebar HTML block.
+
+    Falls back to the empty-state HTML constant when no rows are present so
+    the placeholder copy stays exactly aligned with the wireframe.
+    """
+    if not _HISTORY:
+        return HISTORY_HTML
+    rows_html = "\n".join(
+        f'<div class="ams-history-row" title="{h["label"]}">'
+        f'<span class="ams-history-mode">{h["mode"]}</span>'
+        f'<span class="ams-history-label">{h["label"]}</span>'
+        f"</div>"
+        for h in _HISTORY
+    )
+    return f'<div class="ams-history"><div class="ams-history-title">History · session</div>{rows_html}</div>'
+
+
+def _history_push(mode: str, label: str) -> str:
+    """Push a generation onto the history and return the new HTML."""
+    _HISTORY.insert(0, {"mode": mode, "label": (label or "").strip()[:30] or "(untitled)"})
+    while len(_HISTORY) > _HISTORY_MAX:
+        _HISTORY.pop()
+    return _history_render()
+
+
 MODE_CHOICES = [
     ("🎵 Generate", "generate"),
     ("🎤 Cover", "cover"),
@@ -460,7 +521,11 @@ def build_app() -> gr.Blocks:
                     container=False,
                     elem_classes=["ams-side-radio"],
                 )
-                gr.HTML(HISTORY_HTML)
+                # Dynamic in-memory history (M6/H2). Initial value renders
+                # the same "No generations yet" placeholder the static block
+                # used to emit; each click handler refreshes the HTML via
+                # _history_push().
+                history_html = gr.HTML(HISTORY_HTML, elem_classes=["ams-history-wrapper"])
 
             # --- Content ----------------------------------------------------
             with gr.Column(scale=10, elem_classes=["ams-content"]):
@@ -490,7 +555,7 @@ def build_app() -> gr.Blocks:
                             g["instrumental"],
                             g["lora_state"],
                         ],
-                        outputs=[g["output_audio"], g["output_meta"]],
+                        outputs=[g["output_audio"], g["output_meta"], history_html],
                     )
                     # Post-processing actions (M5/G2)
                     g["separate_stems_btn"].click(
@@ -535,7 +600,7 @@ def build_app() -> gr.Blocks:
                             c["audio_cover_strength"],
                             c["lora_state"],
                         ],
-                        outputs=[c["output_audio"], c["output_meta"]],
+                        outputs=[c["output_audio"], c["output_meta"], history_html],
                     )
                     # Post-processing actions (M5/G2)
                     c["separate_stems_btn"].click(
@@ -584,7 +649,7 @@ def build_app() -> gr.Blocks:
                             x["chunk_mask_mode"],
                             x["lora_state"],
                         ],
-                        outputs=[x["output_audio"], x["output_meta"]],
+                        outputs=[x["output_audio"], x["output_meta"], history_html],
                     )
                     # Post-processing actions (M5/G2)
                     x["separate_stems_btn"].click(
@@ -636,7 +701,7 @@ def build_app() -> gr.Blocks:
                             e["flow_n_avg"],
                             e["lora_state"],
                         ],
-                        outputs=[e["output_audio"], e["output_meta"]],
+                        outputs=[e["output_audio"], e["output_meta"], history_html],
                     )
                     # Post-processing actions (M5/G2)
                     e["separate_stems_btn"].click(
@@ -673,7 +738,7 @@ def build_app() -> gr.Blocks:
                             lyr["max_new_tokens"],
                             lyr["seed"],
                         ],
-                        outputs=[lyr["lyrics_output"], lyr["meta_output"]],
+                        outputs=[lyr["lyrics_output"], lyr["meta_output"], history_html],
                     )
                     # Cross-tab "Use these in Generate" — pipes the drafted
                     # text straight into the Generate tab's lyrics textbox.

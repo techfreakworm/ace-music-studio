@@ -954,6 +954,53 @@ main, .contain {{
   }}
 }}
 
+/* ============================================================
+ * History rows — clickable-looking compact list (M6/H2)
+ * Replaces the static "No generations yet" placeholder with a live
+ * in-memory feed of mode + label tuples. The mode segment renders in
+ * mono uppercase to mirror the small uppercase labels used throughout
+ * the sidebar; the label segment uses the sans body face and truncates
+ * with ellipsis at the sidebar's compact 188-210 px width.
+ * ============================================================ */
+.ams-content .ams-history-wrapper {{
+  margin-top: 4px;
+}}
+.ams-history-row {{
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-family: {FONT_MONO};
+  font-size: 10px;
+  color: {INK_MUTED};
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: default;
+}}
+.ams-history-row:hover {{
+  background: {HOVER_BG};
+  color: {INK};
+}}
+.ams-history-mode {{
+  color: {PRIMARY};
+  text-transform: lowercase;
+  letter-spacing: 0;
+  flex-shrink: 0;
+}}
+.ams-history-label {{
+  color: {INK_MUTED};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: {FONT_SANS};
+  font-size: 11px;
+}}
+@media (max-width: 640px) {{
+  .ams-history,
+  .ams-history-wrapper {{
+    display: none !important;
+  }}
+}}
+
 /* Hide Gradio footer + the floating "Use via API" / settings panel */
 footer {{ display:none !important; }}
 .show-api {{ display:none !important; }}
