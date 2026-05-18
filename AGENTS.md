@@ -1,0 +1,124 @@
+# AGENTS.md
+
+Tool-agnostic agent guidance for the ACE Music Studio repo. If you're driving Claude Code, Cursor, Aider, Codex, or anything else with file-edit + shell access, **start here**.
+
+This file is the authoritative project rulebook. `CLAUDE.md` is Claude-specific extensions; `SKILLS.md` is workflow rules. README.md is the public-facing project intro — different audience.
+
+---
+
+## TL;DR — the five rules
+
+1. **Mayank Gupta is sole author on every commit.** No agent co-author trailers. No "generated with…" footers. No `--author=` flag. Strip any tool-suggested attribution.
+2. **Backend = ACE-Step 1.5 XL SFT, not ComfyUI.** Don't add a ComfyUI dependency under any guise.
+3. **One pipeline instance for all modes.** Generate / Cover / Extend / Edit call different entry points on the same pipeline object. Don't instantiate per-mode — it doubles memory and breaks LoRA state.
+4. **Don't pin `spaces` in `requirements.txt`.** HF Spaces' ZeroGPU build injects its own version. A pin causes pip-resolve failure.
+5. **Locally is the source of truth.** All changes restart `python app.py` and verify on http://127.0.0.1:7860 BEFORE pushing to HF. The Space rebuild is ~5–10 min; iterate locally.
+
+If you can't satisfy these without changing architectural shape, **ask the user before proceeding**.
+
+---
+
+## Project shape
+
+Single-process Gradio 5.50 app, flat top-level Python layout.
+
+```
+app.py            Gradio Blocks entry + bootstrap + event handlers
+backend.py        AceMusicBackend; @spaces.GPU; duration_for; generate_with_retry
+modes.py          call_generate / call_cover / call_extend / call_edit (pure handlers)
+models.py         auto_device, MODEL_CONFIGS, vram_limit_for, HF symlink helper
+lora.py           safetensors header sniff + applied_lora context manager
+lyrics.py         Qwen 2.5 7B inference (MLX on Mac, transformers on CUDA)
+stems.py          Demucs htdemucs_ft stem separation wrapper
+postprocess.py    loudness normalisation + fade in/out
+ui.py             Five per-tab builders
+theme.py          Soft Dark Restraint palette + minimal CSS
+tooltips.py       Centralised info= strings — single source of truth
+tests/            L1+L2 tests + GPU-deselected smoke
+docs/superpowers/ spec + plan + brainstorm artifacts
+```
+
+Same code path locally (MPS / CUDA) and on HF Spaces. The only branching is whether `_bootstrap()` does the cache-mirror dance (Spaces) or just the symlink step (local).
+
+---
+
+## Locked architecture decisions
+
+These came out of brainstorming + spec design. Do not relitigate.
+
+| Decision | Why | Code reference |
+|---|---|---|
+| One `AceMusicBackend` instance, lazy init | Avoids ~60 s pipeline rebuild per request; LoRA revert is cleaner | `backend.get_backend` |
+| Mode dispatch = separate `call_*` functions | Clean handler boundaries; easy to test with mocked pipe | `modes.py` |
+| MPS `vram_limit = None` | `torch.mps` has no `mem_get_info`; any VRAM gate raises AttributeError otherwise | `models.vram_limit_for` |
+| `PYTORCH_ENABLE_MPS_FALLBACK=1` set at app import | A few MPS-unsupported ops crash mid-pipeline without it | `app.py` top-of-file |
+| HF cache → `./models/<repo>/` symlink at boot | ACE-Step's loader looks at local paths, NOT the HF cache snapshot layout | `app._bootstrap` |
+| MLX path for Qwen on Mac | mlx-lm is 3-4x faster than transformers on Apple Silicon for text inference | `lyrics.py` |
+| Stacked LoRA with safetensors sniff | 4 bundled presets + arbitrary uploads; header check avoids corrupt-file crashes | `lora.py` |
+
+---
+
+## Commit rules
+
+- **Conventional Commits:** `<type>(<scope>): <subject>`
+  - types: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `ci`, `perf`
+- Subject is imperative, lowercase, **no trailing period**.
+- Body explains **why** when not obvious. Reference plan task IDs (Task 7, Task A, etc.) when the change implements a specific plan step.
+- Frequent small commits; one logical change per commit.
+- **No agent attribution** in commit message or body. See rule 1.
+- Don't `git push --force` to `main` unless the user explicitly says so.
+
+---
+
+## Verification rules
+
+- **Tests must pass before committing.** `python -m pytest tests/ -q` from the project root.
+- **Ruff must be clean.** `ruff check . && ruff format --check .`
+- **The local app must boot.** `python app.py` → http://127.0.0.1:7860 reachable, no import error in `/tmp/ace-music-studio.log`.
+- **For UI changes:** open the URL in a browser (or Playwright eval) and verify the change is rendered. Don't trust a clean test run + clean ruff as proof that the UI works.
+- **For deployment changes:** push to HF Space, watch the build, verify the runtime stage transitions to `RUNNING` before claiming success.
+
+If a change requires breaking these rules, write the reason in the commit body.
+
+---
+
+## Testing conventions
+
+- **TDD per the plan.** Failing test first, then implementation.
+- **L1 + L2 in CI** (no GPU). The mode handlers are tested with a mocked pipeline. We do NOT mock ACE-Step internals.
+- **L3 GPU smoke** is opt-in (`pytest -m gpu`). Lives in `tests/test_smoke_gpu.py`. Loads the real pipeline (~32 GB cache hit on a warm machine).
+- **L4 HF Space smoke** is manual. Push, wait, click each tab, verify audio renders.
+
+`pyproject.toml` has `addopts = -m 'not gpu'` so the default `pytest` invocation skips GPU. Add the marker before any test that touches ACE-Step weights.
+
+---
+
+## Out of scope (v1 cap — don't add without asking)
+
+Per spec §13. If you find yourself "while I'm here"-ing into one of them, stop.
+
+- Multi-prompt batch queue
+- Persistent generation history
+- User accounts
+- Telemetry dashboard
+- Voice cloning (RVC)
+- LoRA training in-app
+- ControlNet-style conditioning
+- Spectrogram visualization
+- Multi-language UI strings
+- Watermarking output audio
+- Browser audio editing
+- Multi-tenant rate limiting
+- DAW export
+
+If a feature you're adding requires one of these as a sub-step, **ask the user** before proceeding.
+
+---
+
+## When you're not sure
+
+1. Read `docs/superpowers/specs/2026-05-18-ace-music-studio-design.md` — that's the architectural source of truth.
+2. Read `docs/superpowers/plans/2026-05-18-ace-music-studio.md` — the task-by-task breakdown.
+3. Read `SKILLS.md` — process rules, debugging patterns, deployment workflow.
+4. `git log --oneline` — every non-obvious decision has a fix-commit explaining the reasoning.
+5. **Ask the user.** A clarifying question costs the user ten seconds. A wrong implementation costs everyone an hour.
