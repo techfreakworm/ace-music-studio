@@ -199,25 +199,35 @@ CSS = f"""
 /* === Hide Gradio footer ================================================ */
 footer {{ display:none !important; }}
 
-/* === Responsive: tablet 640-1024 px ==================================== */
-@media (max-width: 1024px) {{
-  .ams-sidebar {{
-    min-width:48px !important;
-    max-width:48px !important;
-    padding:8px 4px !important;
-  }}
-  /* Hide labels, keep only the leading emoji */
-  .ams-side-radio label {{
-    font-size:0 !important;
-    padding:8px 0 !important;
-    justify-content:center !important;
-  }}
-  .ams-side-radio label::first-letter {{
-    font-size:16px !important;
-  }}
-  /* Hide history in tablet rail mode */
-  .ams-history {{ display:none !important; }}
+/* === Component labels — kill the white pill, make them inline muted ==== */
+/* Gradio renders component labels (e.g. gr.Audio "Output", gr.Code
+   "Metadata") as elevated white-pill blocks by default. The Brutalist
+   Mono theme wants them as plain muted-ink inline text. */
+.gradio-container .block .label,
+.gradio-container [data-testid="block-label"],
+.gradio-container span.label-wrap > span {{
+  background:transparent !important;
+  color:{INK_MUTED} !important;
+  font-size:10px !important;
+  font-weight:500 !important;
+  letter-spacing:0.06em !important;
+  text-transform:uppercase !important;
+  border:none !important;
+  box-shadow:none !important;
+  padding:4px 0 !important;
 }}
+.gradio-container [data-testid="block-label"] svg,
+.gradio-container .label svg {{
+  display:none !important;  /* drop the music-note / code glyph next to label */
+}}
+
+/* === Responsive: keep full sidebar down to mobile threshold ============ */
+/* The previous tablet "icon rail" mode at 640-1024 px relied on
+   ``::first-letter`` to keep the emoji visible while hiding the label
+   text, but Gradio wraps the radio option text in a <span> so the
+   pseudo-class never hits the emoji. Rather than fight the DOM, we keep
+   the full sidebar at all widths >= 640 px and switch to a stacked
+   layout below that. */
 
 /* === Responsive: mobile < 640 px ======================================= */
 @media (max-width: 640px) {{
