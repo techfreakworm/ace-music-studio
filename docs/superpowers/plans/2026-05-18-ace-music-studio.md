@@ -962,7 +962,24 @@ git commit -m "feat(app): bootstrap gradio blocks with brutalist mono chrome"
 
 **Goal:** Click "Generate" on the Generate tab → ACE-Step pipeline produces a real WAV file. No LoRA stacking, no Demucs, no Lyrics LM. Validates the inference path on M5 Max.
 
-### Task C1: `ace_pipeline.py` — `ACEStepPipeline` lazy wrapper
+### Task C1: `ace_pipeline.py` — `ACEStepStudio` lazy wrapper
+
+**⚠ API CORRECTION (commit `99375d0`, 2026-05-18).** The plan originally assumed `from ace_step import ACEStepPipeline` with a `from_pretrained` entry point. That API does **NOT** exist in the installed `acestep` package (both upstream and the Apple-Silicon fork). The real API is:
+
+```python
+from acestep.handler import AceStepHandler
+from acestep.llm_inference import LLMHandler
+from acestep.inference import GenerationParams, GenerationConfig, generate_music
+
+dit = AceStepHandler()
+dit.initialize_service(project_root=..., config_path="acestep-v15-xl-sft", device="mps")
+lm  = LLMHandler()
+lm.initialize(checkpoint_dir=..., lm_model_path="acestep-5Hz-lm-0.6B", backend="vllm", device="mps")
+result = generate_music(dit, lm, GenerationParams(...), GenerationConfig(...))
+# result.audios[0]["path"] is the WAV file
+```
+
+To keep `backend.py` and `modes.py` clean, `ace_pipeline.py` wraps both handlers in a single `ACEStepStudio` class exposing `generate(params: dict) -> str`. `get_pipeline()` returns the lazy singleton wrapper. Module name is `acestep` (no underscore) — not `ace_step`. Two HF model paths needed: `ACE-Step/acestep-v15-xl-sft` (DiT, ~16 GB) + `ACE-Step/acestep-5Hz-lm-0.6B` (LM planner, ~1.4 GB), placed under `./checkpoints/<config>/`. Read the committed `ace_pipeline.py` for the actual implementation; the code block below this header is the ORIGINAL plan version and is kept only for historical context.
 
 **Files:**
 - Modify: `ace_pipeline.py`
