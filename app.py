@@ -43,10 +43,52 @@ os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 # Don't pin HF download source — let HF default for both Spaces and local cache.
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 
+import random
+
 import gradio as gr
 
 import ace_pipeline
+import backend as be
+import modes
 import theme
+import ui
+
+_BACKEND: be.ACEStepStudioBackend | None = None
+
+
+def get_backend() -> be.ACEStepStudioBackend:
+    global _BACKEND
+    if _BACKEND is None:
+        _BACKEND = be.ACEStepStudioBackend()
+    return _BACKEND
+
+
+def on_generate_click(
+    prompt: str,
+    lyrics: str,
+    duration_s: float,
+    instrumental_label: str,
+    progress=gr.Progress(track_tqdm=True),  # noqa: B008
+):
+    try:
+        out_path, meta = modes.generate(
+            get_backend(),
+            params={
+                "prompt": prompt,
+                "lyrics": lyrics,
+                "duration_s": int(duration_s),
+                "instrumental": instrumental_label == "Instrumental",
+                "seed": random.randint(1, 2_147_483_647),
+                "loras": [],
+                "advanced": {},
+                "lm": {},
+                "dcw": {},
+            },
+        )
+    except ValueError as e:
+        raise gr.Error(str(e)) from e
+    return out_path, meta
+
 
 HEADER_HTML = """
 <div class="ams-header">
@@ -129,7 +171,12 @@ def build_app() -> gr.Blocks:
             # --- Content ----------------------------------------------------
             with gr.Column(scale=10, elem_classes=["ams-content"]):
                 with gr.Group(visible=True, elem_classes=["ams-tab-pane"]) as pane_generate:
-                    gr.Markdown("### 🎵 Generate\n\nPlaceholder — implemented in M1.")
+                    g = ui.build_generate_tab()
+                    g["generate_btn"].click(
+                        fn=on_generate_click,
+                        inputs=[g["prompt"], g["lyrics"], g["duration_s"], g["instrumental"]],
+                        outputs=[g["output_audio"], g["output_meta"]],
+                    )
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_cover:
                     gr.Markdown("### 🎤 Cover\n\nPlaceholder — implemented in M3.")
                 with gr.Group(visible=False, elem_classes=["ams-tab-pane"]) as pane_extend:

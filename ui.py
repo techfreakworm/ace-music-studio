@@ -64,7 +64,6 @@ def build_generate_tab() -> dict[str, gr.components.Component]:
                 label="Output",
                 type="filepath",
                 interactive=False,
-                show_download_button=True,
             )
             components["output_meta"] = gr.Code(
                 label="Metadata",
