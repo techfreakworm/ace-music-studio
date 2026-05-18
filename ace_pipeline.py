@@ -41,6 +41,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent
 _CHECKPOINTS_DIR = _REPO_ROOT / "checkpoints"
+_OUTPUT_DIR = _REPO_ROOT / "output"
 
 _DEFAULT_DIT_CONFIG = "acestep-v15-xl-sft"
 _DEFAULT_LM_MODEL = "acestep-5Hz-lm-0.6B"
@@ -193,14 +194,46 @@ class ACEStepStudio:
             seeds=[int(params.get("seed", 1))],
         )
 
-        result = generate_music(self._dit, self._llm, gen_params, gen_config)
+        # generate_music only writes a file when save_dir is provided; otherwise
+        # result.audios[i]["path"] is empty and ["tensor"] holds the raw audio.
+        # Pass an explicit output dir so the path is always usable.
+        _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        result = generate_music(
+            self._dit,
+            self._llm,
+            gen_params,
+            gen_config,
+            save_dir=str(_OUTPUT_DIR),
+        )
 
         if not result.success:
             raise RuntimeError(f"ACE-Step generation failed: {result.error}")
         if not result.audios:
             raise RuntimeError("ACE-Step returned no audio outputs")
 
-        return result.audios[0]["path"]
+        audio = result.audios[0]
+        path = audio.get("path") or ""
+        if not path:
+            # generate_music returned an empty path despite save_dir being passed.
+            # Fall back to writing the in-memory tensor so callers always get a
+            # valid file path (Gradio cannot serve an empty path).
+            import soundfile as sf
+
+            tensor = audio.get("tensor")
+            if tensor is None:
+                raise RuntimeError("ACE-Step returned neither an audio path nor a tensor")
+            sample_rate = int(audio.get("sample_rate", 48000))
+            audio_format = advanced.get("audio_format", "wav")
+            fallback = _OUTPUT_DIR / f"{audio.get('key', 'fallback')}.{audio_format}"
+            data = tensor.detach().cpu().numpy()
+            # soundfile expects (frames, channels); acestep tensors are (channels, frames)
+            if data.ndim == 2 and data.shape[0] in (1, 2):
+                data = data.T
+            sf.write(str(fallback), data, sample_rate)
+            path = str(fallback)
+
+        return path
 
 
 _PIPELINE: ACEStepStudio | None = None  # module-level lazy singleton
