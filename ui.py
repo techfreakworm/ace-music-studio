@@ -65,9 +65,9 @@ def build_generate_tab() -> dict[str, gr.components.Component]:
                 type="filepath",
                 interactive=False,
             )
-            components["output_meta"] = gr.Code(
-                label="Metadata",
-                language="json",
-            )
+            # gr.JSON renders a dict directly as a syntax-highlighted, expandable
+            # tree. gr.Code(language="json") refuses dicts — it requires a
+            # pre-stringified blob — and crashes with "'dict' has no .strip()".
+            components["output_meta"] = gr.JSON(label="Metadata")
 
     return components
