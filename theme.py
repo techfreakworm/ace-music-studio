@@ -195,6 +195,14 @@ main, .contain {{
 .ams-body {{
   gap:12px !important;
   align-items:stretch !important;
+  /* Same flex-shrink fix as ``.ams-content``: without ``min-width: 0`` on
+     the children, a wide audio waveform inside the content column can
+     blow the row past the viewport on mobile. */
+  max-width:100% !important;
+  overflow:hidden !important;
+}}
+.ams-body > * {{
+  min-width:0 !important;
 }}
 
 /* ============================================================
@@ -287,6 +295,19 @@ main, .contain {{
   border-radius:{RADIUS} !important;
   padding:14px !important;
   min-height:540px;
+  /* Flex children default to ``min-width: auto`` which means they CANNOT
+     shrink below their content's intrinsic width. The wavesurfer.js
+     waveform renders pixel-perfect to the audio duration (e.g. a 60 s
+     clip wants ~600 px), which would push this column wider than the
+     viewport on mobile and cause the layout to "dance" between
+     pre-generation and post-generation widths. ``min-width: 0`` lets
+     the column shrink, and the audio block's own ``overflow: hidden``
+     clips the inner waveform. */
+  min-width:0 !important;
+  /* Match: the row child is also constrained so the audio waveform
+     can't push it out of bounds on mobile. */
+  max-width:100% !important;
+  overflow-x:hidden !important;
 }}
 .ams-tab-pane {{
   background:transparent !important;
@@ -471,6 +492,27 @@ main, .contain {{
 }}
 .ams-content .ams-out-audio {{
   min-height:90px !important;
+  /* Wavesurfer's waveform renders one pixel per audio frame at the
+     ``minPxPerSec`` rate; for a 60 s clip that can exceed the
+     column's width. Cage it so it can't push the parent wider. */
+  min-width:0 !important;
+  max-width:100% !important;
+  overflow:hidden !important;
+}}
+.ams-content .ams-out-audio .component-wrapper,
+.ams-content .ams-out-audio .waveform-container,
+.ams-content .ams-out-audio [data-testid^="waveform"],
+.ams-content .ams-out-audio #waveform {{
+  width:100% !important;
+  max-width:100% !important;
+  min-width:0 !important;
+  overflow:hidden !important;
+}}
+/* Wavesurfer renders a <canvas> sized in CSS pixels from the audio
+   duration; force it to the wrapper's width on small screens. */
+.ams-content .ams-out-audio canvas,
+.ams-content .ams-out-audio wave {{
+  max-width:100% !important;
 }}
 .ams-content .ams-out-meta {{
   min-height:80px !important;
