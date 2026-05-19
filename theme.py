@@ -406,6 +406,70 @@ main, .contain {{
 }}
 
 /* ============================================================
+ * Checkbox — native browser checkboxes render almost invisibly on
+ * the Brutalist Mono dark palette (white outline on dark surface,
+ * no visible fill when checked). Replace with a custom drawn box:
+ *   - unchecked: dark surface, subtle 1.5 px white border
+ *   - checked:   WHITE fill with a black checkmark SVG drawn inline
+ *                (no external asset, no CSP issues)
+ *   - hover:     border brightens
+ *   - focus:     2 px white outline
+ * ``accent-color`` alone isn't enough — Gradio 6.14's checkbox style
+ * has tiny dimensions (12 px) and a transparent background that
+ * still hides the indicator on cool-temperature phone displays.
+ * ============================================================ */
+.ams-content input[type="checkbox"] {{
+  -webkit-appearance:none !important;
+  appearance:none !important;
+  width:16px !important;
+  height:16px !important;
+  min-width:16px !important;
+  min-height:16px !important;
+  margin:0 8px 0 0 !important;
+  padding:0 !important;
+  border:1.5px solid {INK_MUTED} !important;
+  border-radius:2px !important;
+  background:{SURFACE_STRONG} !important;
+  cursor:pointer !important;
+  transition:background 80ms ease, border-color 80ms ease;
+  vertical-align:middle !important;
+  flex-shrink:0;
+}}
+.ams-content input[type="checkbox"]:hover {{
+  border-color:{INK} !important;
+}}
+.ams-content input[type="checkbox"]:focus-visible {{
+  outline:2px solid {PRIMARY} !important;
+  outline-offset:2px !important;
+}}
+.ams-content input[type="checkbox"]:checked {{
+  background:{PRIMARY} !important;
+  border-color:{PRIMARY} !important;
+  /* Black checkmark drawn inline (no external assets) — uses a small
+     polyline SVG sized to fit the 16 px box. */
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%230A0A0A' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3,8 7,12 13,4'/%3E%3C/svg%3E") !important;
+  background-repeat:no-repeat !important;
+  background-position:center !important;
+  background-size:12px 12px !important;
+}}
+/* The label that wraps the checkbox + text should align them on a
+   single baseline so the new larger box doesn't push the text down. */
+.ams-content label.checkbox-container {{
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:2px !important;
+  cursor:pointer !important;
+  padding:4px 0 !important;
+}}
+.ams-content label.checkbox-container .label-text {{
+  font-family: {FONT_SANS} !important;
+  font-size:12px !important;
+  color:{INK} !important;
+  letter-spacing:0;
+  text-transform:none !important;
+}}
+
+/* ============================================================
  * Form Radio (Vocal mode) — compact pills, NOT the sidebar tabs
  * ============================================================ */
 .ams-content .block:has(input[type="radio"]) .wrap {{
