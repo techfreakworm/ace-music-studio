@@ -72,9 +72,22 @@ def get_backend() -> be.ACEStepStudioBackend:
     return _BACKEND
 
 
+# Repos that are pre-downloaded by HF Spaces' ``preload_from_hub`` (see
+# README frontmatter). The two ACE-Step repos *must* be symlinked into
+# ``./models/<org>/<repo>/`` so the fork's checkpoint resolver finds them
+# without an extra network round-trip. The LoRA repos and Qwen don't
+# strictly need the symlink — ``lora_stack.download_preset`` and the
+# ``transformers`` Auto* loaders resolve them via the HF cache directly
+# from ``hf_hub_download(repo_id, filename)`` / ``from_pretrained(repo_id)``.
+# Including them here is a belt-and-braces measure: the snapshot_download
+# call in ``_symlink_snapshots_into_models`` short-circuits when files are
+# already cached, so the only cost is one symlink each.
 _PRELOAD_REPOS = (
     "ACE-Step/Ace-Step1.5",
     "ACE-Step/acestep-v15-xl-sft",
+    "ACE-Step/ACE-Step-v1-chinese-rap-LoRA",
+    "ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA",
+    "Qwen/Qwen2.5-7B-Instruct",
 )
 
 
@@ -129,6 +142,26 @@ def _bootstrap_spaces_cache() -> None:
     _mirror_hf_cache()
     os.environ["HF_HOME"] = str(_hf_cache_rw_dir())
     _symlink_snapshots_into_models()
+
+
+def _warm_demucs_on_spaces() -> None:
+    """Pre-download Demucs htdemucs_ft so first stem request is fast.
+
+    Demucs hosts its weights on dl.fbaipublicfiles.com, not HF Hub, so
+    preload_from_hub can't fetch them. We trigger the download at module load
+    on Spaces (gated by SPACE_ID) so user-facing latency is minimal.
+    Off-Spaces this is a no-op — local dev downloads on first user click.
+    """
+    if not os.getenv("SPACE_ID"):
+        return
+    try:
+        from demucs.pretrained import get_model
+
+        # Calling get_model triggers the download + cache. Discard the result.
+        get_model("htdemucs_ft")
+    except Exception as e:
+        # Warmup is best-effort. Surface in the log but don't crash startup.
+        print(f"[warmup] demucs htdemucs_ft preload skipped: {e}", flush=True)
 
 
 _GPU_BASE_BY_MODE = {
@@ -250,6 +283,7 @@ def _maybe_spaces_gpu(mode: str):
 # Run cache bootstrap at module import so HF Spaces' startup analyzer sees
 # the symlinks before the lazy backend singleton is constructed on first click.
 _bootstrap_spaces_cache()
+_warm_demucs_on_spaces()
 
 
 def _safe_call(fn, *args, **kwargs):

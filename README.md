@@ -10,8 +10,11 @@ pinned: false
 license: mit
 short_description: Open-source song generation studio on ACE-Step 1.5 XL SFT — Generate, Cover, Extend, Edit, draft Lyrics.
 preload_from_hub:
-- ACE-Step/Ace-Step1.5 vae/diffusion_pytorch_model.safetensors,vae/config.json,encoder/pytorch_model.bin,encoder/config.json,encoder/tokenizer.json
-- ACE-Step/acestep-v15-xl-sft model.safetensors
+- ACE-Step/Ace-Step1.5
+- ACE-Step/acestep-v15-xl-sft
+- ACE-Step/ACE-Step-v1-chinese-rap-LoRA
+- ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA
+- Qwen/Qwen2.5-7B-Instruct
 ---
 
 # ACE Music Studio
