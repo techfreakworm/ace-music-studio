@@ -8,7 +8,7 @@ sdk_version: 6.14.0
 app_file: app.py
 pinned: false
 license: mit
-short_description: Open-source song generation studio on ACE-Step 1.5 XL SFT — Generate, Cover, Extend, Edit, draft Lyrics.
+short_description: Song generation studio on ACE-Step 1.5 XL SFT
 preload_from_hub:
 - ACE-Step/Ace-Step1.5
 - ACE-Step/acestep-v15-xl-sft
