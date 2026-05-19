@@ -1,4 +1,5 @@
-# gradio is injected by HF Spaces per README sdk_version (pinned to match ace-step's gradio==6.2.0)
+# gradio is injected by HF Spaces per README sdk_version. The apple-silicon
+# ace-step fork allows gradio>=6.5.1; we keep sdk_version at 6.14.0.
 transformers>=4.45,<5
 torch>=2.4
 torchaudio>=2.4
@@ -11,7 +12,10 @@ librosa>=0.10
 huggingface_hub>=0.25
 hf_transfer>=0.1.9
 numpy>=1.26,<2
-ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git
+# Use the apple-silicon fork on all platforms — upstream ace-step pins
+# gradio==6.2.0 and requires nano-vllm (not on PyPI) on Linux. The fork
+# declares torch==2.10.0 for Linux + has a looser gradio pin.
+ace-step @ git+https://github.com/clockworksquirrel/ace-step-apple-silicon.git
 # HF Spaces ZeroGPU. Do NOT pin — HF's ZeroGPU build injects its own version
 # and a pin causes pip-resolve failure. Locally the `import spaces` in
 # app._maybe_spaces_gpu() is wrapped in try/except so absence is fine.
