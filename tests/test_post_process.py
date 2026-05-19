@@ -9,19 +9,44 @@ import post_process as pp
 
 
 def test_separate_stems_returns_four_paths(tmp_path, monkeypatch):
+    """Mocks the lower-level demucs path used by post_process.separate_stems:
+    torchaudio.load → apply_model → sf.write. The wrapper convenience API
+    (Separator.separate_audio_file) is intentionally not in this code path
+    because it only ships with demucs >= 4.1."""
+    import sys
+    import types
+
+    import numpy as np
+    import torch
+
     src = tmp_path / "song.wav"
     src.write_bytes(b"RIFF" + b"\0" * 100)
 
-    fake_sep = MagicMock()
-    fake_sep.separate_audio_file.return_value = {
-        "vocals": tmp_path / "vocals.wav",
-        "drums": tmp_path / "drums.wav",
-        "bass": tmp_path / "bass.wav",
-        "other": tmp_path / "other.wav",
-    }
-    for k in ("vocals", "drums", "bass", "other"):
-        (tmp_path / f"{k}.wav").write_bytes(b"RIFF" + b"\0" * 100)
-    monkeypatch.setattr(pp, "_get_demucs", lambda: fake_sep)
+    fake_model = MagicMock()
+    fake_model.samplerate = 44100
+    fake_model.sources = ["drums", "bass", "other", "vocals"]
+    fake_model.audio_channels = 2
+    monkeypatch.setattr(pp, "_get_demucs", lambda: fake_model)
+
+    fake_torchaudio = types.ModuleType("torchaudio")
+    fake_torchaudio.load = lambda _path: (torch.zeros((2, 44100)), 44100)
+    fake_torchaudio.functional = types.SimpleNamespace(resample=lambda wav, _sr_in, _sr_out: wav)
+    monkeypatch.setitem(sys.modules, "torchaudio", fake_torchaudio)
+
+    fake_demucs_apply = types.ModuleType("demucs.apply")
+    fake_demucs_apply.apply_model = lambda _m, batch, **_kw: torch.zeros((batch.shape[0], 4, 2, 44100))
+    monkeypatch.setitem(sys.modules, "demucs.apply", fake_demucs_apply)
+
+    written: list[str] = []
+
+    def fake_sf_write(path, _data, _sr):
+        written.append(path)
+        Path(path).write_bytes(b"RIFF" + b"\0" * 100)
+
+    fake_sf = types.ModuleType("soundfile")
+    fake_sf.write = fake_sf_write
+    fake_sf.read = lambda _path: (np.zeros((44100, 2)), 44100)
+    monkeypatch.setitem(sys.modules, "soundfile", fake_sf)
 
     stems = pp.separate_stems(src)
     assert set(stems.keys()) == {"vocals", "drums", "bass", "other"}
