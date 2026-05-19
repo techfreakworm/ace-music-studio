@@ -53,10 +53,12 @@ TBD as discovered during M1+ implementation. Record new ones here as they come u
 - Don't pin `spaces` in `requirements.txt`. HF Spaces' ZeroGPU build injects its own version. A pin causes pip-resolve failure.
 - `transformers >= 5` may break imports. **Pin:** `transformers>=4.45,<5.0`.
 
-### Gradio 5 quirks
+### Gradio 6.14 quirks
 
+- Running version is `gradio>=6.14,<7`. `requirements.txt` reflects this; HF Spaces `sdk_version: 6.14.0` matches.
 - Don't put `<script>` tags inside `gr.HTML` blocks — they get stripped. JS goes in `gr.Blocks(head=…)`.
-- The Gradio 6.0 deprecation warnings about `theme=` / `css=` / `head=` on `Blocks` are benign on 5.50. Ignore until upgrade.
+- `info=` is not accepted by `gr.Audio` or `gr.File` on 6.14. `tooltips.py` keeps the strings for `COVER_REF_AUDIO`, `EXTEND_SEED_AUDIO`, `EDIT_SOURCE_AUDIO`, `LORA_UPLOAD` as the single source of truth — when upstream lands `info=` on those components, they're a one-line wire-up away.
+- Slate-blue band around primary CTA: defeated via `.styler { background: transparent }` in `theme.CSS`. If a future Gradio bump reintroduces it, the override needs revisiting.
 
 ### HF Spaces deployment
 
