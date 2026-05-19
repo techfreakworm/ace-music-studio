@@ -49,6 +49,14 @@ os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 # Don't pin HF download source — let HF default for both Spaces and local cache.
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 
+# On HF Spaces ZeroGPU, ~/.cache/huggingface/ is build-user-owned and read-only
+# at runtime. transformers.AutoModel.from_pretrained(trust_remote_code=True)
+# (used by the ACE-Step DiT loader) wants to write modeling_*.py shims into
+# ~/.cache/huggingface/modules/ → PermissionError. Redirect to /tmp which
+# is always writable. Off-Spaces this is harmless — transformers just uses
+# the redirected path. ~50 KB per model, fast re-download on cold starts.
+os.environ.setdefault("HF_MODULES_CACHE", "/tmp/hf-modules")
+
 # Vendored ace-step (git submodule at vendor/ace-step/) — added to sys.path
 # BEFORE any module that imports `from acestep import ...`. We vendor
 # instead of pip-installing because the upstream pyproject.toml declares
