@@ -132,6 +132,7 @@ class _MLXLM:
     tokenizer: Any
 
     def generate(self, system: str, user: str, **kw: Any) -> str:
+        import mlx.core as mx  # type: ignore[import-not-found]
         from mlx_lm import generate  # type: ignore[import-not-found]
 
         # Qwen's ChatML template — mlx-lm doesn't expose apply_chat_template
@@ -141,12 +142,20 @@ class _MLXLM:
             f"<|im_start|>user\n{user}<|im_end|>\n"
             f"<|im_start|>assistant\n"
         )
-        return generate(
-            self.model,
-            self.tokenizer,
-            prompt=prompt,
-            max_tokens=int(kw.get("max_new_tokens", 600)),
-        )
+        # Gradio runs handlers in anyio worker threads. MLX maintains a
+        # *per-thread* default stream and bails with "There is no
+        # Stream(gpu, 0) in current thread" when a worker thread that
+        # didn't create the GPU stream tries to use it. Wrapping the
+        # generate() call in ``mx.stream(mx.gpu)`` installs a GPU stream
+        # for the current thread for the duration of the context, which
+        # is what mlx-lm's wired_limit() helper expects.
+        with mx.stream(mx.gpu):
+            return generate(
+                self.model,
+                self.tokenizer,
+                prompt=prompt,
+                max_tokens=int(kw.get("max_new_tokens", 600)),
+            )
 
 
 @dataclass
