@@ -226,6 +226,21 @@ class ACEStepStudio:
         )
         duration_s = int(params.get("duration_s") or params.get("extra_duration_s") or 30)
 
+        # ``advanced``/``lm`` dicts are sent by app.py's
+        # ``_build_advanced_params``. Key changes from the prior contract:
+        # - ``inference_steps`` (was ``steps``, defaulted to 8 which made the
+        #   XL SFT model behave too turbo-ish; new default 27).
+        # - ``guidance_scale`` (was ``cfg``, default 7.0 for stronger prompt
+        #   adherence).
+        # - ``infer_method`` (new — ``"ode"`` deterministic / ``"sde"``
+        #   stochastic; the user can now flip to ``sde`` to actually get
+        #   different output each click even with the same seed).
+        # - ``use_adg`` (new — Adaptive Dual Guidance; experimental).
+        # - ``thinking`` (5Hz LM CoT — default flips to True so the LM can
+        #   reason about caption + metadata, which is the actual source of
+        #   the "no matter what prompt the style barely changes" symptom).
+        # - ``use_cot_metas`` / ``use_cot_caption`` / ``use_cot_language``
+        #   keys renamed from ``cot_*`` for consistency with the dataclass.
         gen_params = GenerationParams(
             task_type=task_type,
             caption=caption,
@@ -233,8 +248,10 @@ class ACEStepStudio:
             instrumental=instrumental,
             duration=duration_s,
             seed=int(params.get("seed", -1)),
-            inference_steps=int(advanced.get("steps", 32)),
-            guidance_scale=float(advanced.get("cfg", 4.0)),
+            inference_steps=int(advanced.get("inference_steps", 27)),
+            guidance_scale=float(advanced.get("guidance_scale", 7.0)),
+            infer_method=str(advanced.get("infer_method", "ode")),
+            use_adg=bool(advanced.get("use_adg", False)),
             shift=float(advanced.get("shift", 1.0)),
             bpm=advanced.get("bpm"),
             keyscale=advanced.get("keyscale", ""),
@@ -248,16 +265,18 @@ class ACEStepStudio:
             audio_cover_strength=audio_cover_strength,
             repainting_start=repainting_start,
             repainting_end=repainting_end,
-            # 5Hz language model knobs
-            thinking=bool(lm_opts.get("thinking", False)),
+            # 5Hz language model knobs — defaults flipped to True so the
+            # LM actually reasons about each prompt instead of returning
+            # blank captions / metadata back to the DiT.
+            thinking=bool(lm_opts.get("thinking", True)),
             lm_temperature=float(lm_opts.get("temperature", 0.85)),
             lm_cfg_scale=float(lm_opts.get("cfg", 2.0)),
             lm_top_k=int(lm_opts.get("top_k", 0)),
             lm_top_p=float(lm_opts.get("top_p", 0.9)),
-            lm_negative_prompt=lm_opts.get("negative_prompt", ""),
-            use_cot_metas=bool(lm_opts.get("cot_metas", False)),
-            use_cot_caption=bool(lm_opts.get("cot_caption", False)),
-            use_cot_language=bool(lm_opts.get("cot_language", False)),
+            lm_negative_prompt=lm_opts.get("negative_prompt", "NO USER INPUT"),
+            use_cot_metas=bool(lm_opts.get("use_cot_metas", True)),
+            use_cot_caption=bool(lm_opts.get("use_cot_caption", True)),
+            use_cot_language=bool(lm_opts.get("use_cot_language", True)),
         )
 
         gen_config = GenerationConfig(

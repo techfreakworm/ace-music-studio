@@ -16,6 +16,175 @@ import lora_stack
 import tooltips
 
 
+def _build_advanced_accordion(components: dict[str, gr.components.Component]) -> None:
+    """Advanced controls accordion shared by all four song modes.
+
+    User complaint: "no matter what prompt I write, style is not deviating
+    by a lot". Root cause: ``GenerationParams.inference_steps`` defaults
+    to 8 (ACE-Step turbo) — too few for the XL SFT model to actually
+    express prompt variation. ``guidance_scale``, ``infer_method``,
+    ``shift``, ``use_adg``, and the CoT flags were all left at dataclass
+    defaults too. This accordion surfaces the ~21 most useful knobs in
+    four logical groups so the user can lock-and-iterate.
+
+    Each song-mode pane (Generate / Cover / Extend / Edit) calls this
+    right after ``_build_lora_accordion(components)`` so the layout is
+    consistent. The Lyrics tab does NOT get this — it's a Qwen path with
+    its own LM-params accordion already.
+    """
+    with gr.Accordion(
+        label="Advanced",
+        open=False,
+        elem_classes=["ams-advanced"],
+    ):
+        # --- Group A — Diffusion (most impactful) ---
+        gr.Markdown("**Diffusion**", elem_classes=["ams-adv-section"])
+        components["adv_inference_steps"] = gr.Slider(
+            minimum=8,
+            maximum=80,
+            value=27,
+            step=1,
+            label="Inference steps",
+            info="More steps → richer detail. 8 is turbo, 27-60 is the sweet spot for XL SFT.",
+        )
+        components["adv_guidance_scale"] = gr.Slider(
+            minimum=1.0,
+            maximum=15.0,
+            value=7.0,
+            step=0.5,
+            label="Guidance scale (CFG)",
+            info="Higher = follow the prompt more strictly. Lower = more creative / weirder.",
+        )
+        components["adv_infer_method"] = gr.Radio(
+            choices=["ode", "sde"],
+            value="ode",
+            label="Inference method",
+            info="ode = deterministic per seed. sde = injects stochastic noise per step → genuinely different outputs each run.",
+        )
+        components["adv_seed"] = gr.Number(
+            value=-1,
+            precision=0,
+            label="Seed",
+            info="-1 = randomize each run. Set a number to lock-and-iterate.",
+        )
+
+        # --- Group B — CFG schedule + shift + ADG ---
+        gr.Markdown("**CFG schedule + shift**", elem_classes=["ams-adv-section"])
+        components["adv_cfg_interval_start"] = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=0.0,
+            step=0.05,
+            label="CFG interval start",
+            info="Fraction of diffusion at which CFG kicks in.",
+        )
+        components["adv_cfg_interval_end"] = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=1.0,
+            step=0.05,
+            label="CFG interval end",
+            info="Fraction of diffusion at which CFG stops.",
+        )
+        components["adv_shift"] = gr.Slider(
+            minimum=0.5,
+            maximum=3.0,
+            value=1.0,
+            step=0.1,
+            label="Shift",
+            info="Timestep shift. Try 0.7-1.3 for different feel.",
+        )
+        components["adv_use_adg"] = gr.Checkbox(
+            value=False,
+            label="Use Adaptive Dual Guidance (ADG)",
+            info="Experimental — sometimes improves base model output.",
+        )
+
+        # --- Group C — 5Hz Language Model (CoT reasoning) ---
+        gr.Markdown("**5Hz LM (CoT)**", elem_classes=["ams-adv-section"])
+        components["adv_thinking"] = gr.Checkbox(
+            value=True,
+            label="Enable thinking (CoT)",
+            info="Let the 5Hz LM reason before generating. Recommended ON.",
+        )
+        components["adv_use_cot_caption"] = gr.Checkbox(
+            value=True,
+            label="Let LM rewrite caption",
+            info="LM expands/rephrases your prompt. Adds variety.",
+        )
+        components["adv_use_cot_metas"] = gr.Checkbox(
+            value=True,
+            label="Let LM infer metadata (bpm/key/time)",
+            info="LM picks musical metadata. Turn off to force your manual values below.",
+        )
+        components["adv_use_cot_language"] = gr.Checkbox(
+            value=True,
+            label="Let LM detect vocal language",
+            info="LM picks vocal language from caption + lyrics.",
+        )
+        components["adv_lm_temperature"] = gr.Slider(
+            minimum=0.0,
+            maximum=2.0,
+            value=0.85,
+            step=0.05,
+            label="LM temperature",
+            info="Higher = more creative metadata/structure.",
+        )
+        components["adv_lm_top_p"] = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=0.9,
+            step=0.05,
+            label="LM top-p",
+            info="Nucleus sampling.",
+        )
+        components["adv_lm_top_k"] = gr.Number(
+            value=0,
+            precision=0,
+            label="LM top-k",
+            info="0 = disabled.",
+        )
+        components["adv_lm_cfg_scale"] = gr.Slider(
+            minimum=1.0,
+            maximum=10.0,
+            value=2.0,
+            step=0.5,
+            label="LM CFG scale",
+            info="5Hz LM classifier-free guidance.",
+        )
+        components["adv_lm_negative_prompt"] = gr.Textbox(
+            value="NO USER INPUT",
+            label="LM negative prompt",
+            info="Steer the LM AWAY from these traits.",
+        )
+
+        # --- Group D — Music metadata (manual overrides) ---
+        gr.Markdown("**Music metadata**", elem_classes=["ams-adv-section"])
+        components["adv_bpm"] = gr.Number(
+            value=None,
+            precision=0,
+            label="BPM",
+            info="Empty = auto. 30-300.",
+        )
+        components["adv_keyscale"] = gr.Textbox(
+            value="",
+            label="Key / scale",
+            info="e.g. 'C Major', 'Am'. Empty = auto.",
+        )
+        components["adv_timesignature"] = gr.Dropdown(
+            choices=["", "2", "3", "4", "6"],
+            value="",
+            label="Time signature",
+            info="2=2/4, 3=3/4, 4=4/4, 6=6/8. Empty = auto.",
+        )
+        components["adv_vocal_language"] = gr.Dropdown(
+            choices=["unknown", "en", "zh", "ja", "ko", "es", "fr", "de", "it", "pt", "ru"],
+            value="unknown",
+            label="Vocal language",
+            info="Hint for the 5Hz LM. unknown = auto.",
+        )
+
+
 def _build_lora_accordion(components: dict[str, gr.components.Component]) -> None:
     """LoRA accordion with single-LoRA semantics. Mutates ``components``.
 
@@ -179,6 +348,7 @@ def build_generate_tab() -> dict[str, gr.components.Component]:
                 )
 
             _build_lora_accordion(components)
+            _build_advanced_accordion(components)
 
             components["generate_btn"] = gr.Button(
                 "▶ Generate",
@@ -240,6 +410,7 @@ def build_cover_tab() -> dict[str, gr.components.Component]:
                 )
 
             _build_lora_accordion(components)
+            _build_advanced_accordion(components)
 
             components["generate_btn"] = gr.Button(
                 "▶ Generate cover",
@@ -341,6 +512,7 @@ def build_extend_tab() -> dict[str, gr.components.Component]:
                 )
 
             _build_lora_accordion(components)
+            _build_advanced_accordion(components)
 
             components["generate_btn"] = gr.Button(
                 "▶ Extend",
@@ -455,6 +627,7 @@ def build_edit_tab() -> dict[str, gr.components.Component]:
                 components["flow_n_avg"] = gr.Slider(minimum=1, maximum=5, value=1, step=1, label="n_avg")
 
             _build_lora_accordion(components)
+            _build_advanced_accordion(components)
 
             components["generate_btn"] = gr.Button(
                 "▶ Apply edit",

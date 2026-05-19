@@ -990,6 +990,85 @@ main, .contain {{
 }}
 
 /* ============================================================
+ * Advanced controls accordion (M0-X)
+ * Bordered chrome matching the LoRA + LM + experimental accordions so
+ * the four song-mode panes read consistently. Inside the accordion we
+ * additionally render small <h>/<p strong> section headers (Diffusion,
+ * CFG schedule, 5Hz LM, Music metadata) to chunk the 21 knobs into
+ * logical groups; those need their own mono-uppercase-faint treatment
+ * so they don't compete with the form labels for visual weight.
+ * ============================================================ */
+.ams-content .ams-advanced {{
+  border:1px solid {BORDER} !important;
+  border-radius:3px !important;
+  background:{SURFACE_STRONG} !important;
+  margin-top:10px !important;
+  padding:0 !important;
+}}
+.ams-content .ams-advanced > .label-wrap,
+.ams-content .ams-advanced summary,
+.ams-content .ams-advanced > button {{
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+  color:{INK_MUTED} !important;
+  padding:10px 12px !important;
+  background:transparent !important;
+  border:none !important;
+}}
+.ams-content .ams-advanced > .label-wrap span,
+.ams-content .ams-advanced summary span,
+.ams-content .ams-advanced > button span {{
+  color:{INK_MUTED} !important;
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.08em !important;
+  text-transform:uppercase !important;
+}}
+.ams-content .ams-advanced > div:not(.label-wrap):not(summary) {{
+  padding:0 12px 12px 12px !important;
+}}
+/* Section divider Markdown headers inside the accordion. We render them
+   as **Diffusion** (etc) via gr.Markdown — Gradio wraps that in
+   ``.prose strong``. Treat the strong tag as a small mono uppercase
+   header with a subtle underline so the four groups have clear visual
+   boundaries without competing with the actual form labels. */
+.ams-content .ams-advanced .ams-adv-section .prose p {{
+  margin:14px 0 4px 0 !important;
+  padding:0 0 4px 0 !important;
+  border-bottom:1px solid {BORDER} !important;
+}}
+.ams-content .ams-advanced .ams-adv-section .prose p:first-child {{
+  margin-top:6px !important;
+}}
+.ams-content .ams-advanced .ams-adv-section .prose strong {{
+  font-family: {FONT_MONO} !important;
+  font-size:10px !important;
+  letter-spacing:0.12em !important;
+  text-transform:uppercase !important;
+  color:{INK} !important;
+  font-weight:600 !important;
+}}
+.ams-content .ams-advanced .ams-adv-section .prose {{
+  background:transparent !important;
+}}
+@media (max-width: 640px) {{
+  .ams-content .ams-advanced > .label-wrap,
+  .ams-content .ams-advanced summary,
+  .ams-content .ams-advanced > button {{
+    font-size:9px !important;
+    padding:8px 10px !important;
+  }}
+  .ams-content .ams-advanced > div:not(.label-wrap):not(summary) {{
+    padding:0 10px 10px 10px !important;
+  }}
+  .ams-content .ams-advanced .ams-adv-section .prose strong {{
+    font-size:9px !important;
+  }}
+}}
+
+/* ============================================================
  * Post-process action row (M5/G2) — sits below the Output Audio.
  * Three compact mono pills (separate stems / normalise / mp3 export)
  * that surface hidden gr.Files / gr.Audio / gr.File widgets once a

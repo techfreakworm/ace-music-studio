@@ -64,6 +64,10 @@ class ACEStepStudioBackend:
                 {"name": lora.get("name"), "scale": lora.get("scale"), "sha256": lora.get("sha256")}
                 for lora in params.get("loras", [])
             ],
+            # Echo the advanced + lm dicts back so the user can see which
+            # knobs were active for a given output and lock-iterate from
+            # there. The "seed" above is the resolved seed (never -1).
+            "advanced": params.get("advanced", {}),
             "lm": params.get("lm", {}),
             "dcw": params.get("dcw", {}),
         }

@@ -106,7 +106,15 @@ def test_studio_generate_builds_params_and_calls_generate_music(monkeypatch, tmp
             "instrumental": False,
             "seed": 42,
             "loras": [],
-            "advanced": {"steps": 32, "cfg": 4.0, "bpm": 135},
+            # New advanced contract: ``inference_steps`` + ``guidance_scale``
+            # + ``infer_method`` replace the old ``steps`` + ``cfg`` keys.
+            # See ace_pipeline.ACEStepStudio.generate for the full schema.
+            "advanced": {
+                "inference_steps": 32,
+                "guidance_scale": 4.0,
+                "infer_method": "ode",
+                "bpm": 135,
+            },
             "lm": {"thinking": False},
             "dcw": {},
         }
@@ -118,6 +126,8 @@ def test_studio_generate_builds_params_and_calls_generate_music(monkeypatch, tmp
     assert captured["gp"]["duration"] == 30
     assert captured["gp"]["seed"] == 42
     assert captured["gp"]["inference_steps"] == 32
+    assert captured["gp"]["guidance_scale"] == 4.0
+    assert captured["gp"]["infer_method"] == "ode"
     assert captured["gp"]["bpm"] == 135
 
 
