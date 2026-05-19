@@ -29,9 +29,11 @@ DO NOT switch this back to ``gr.Tabs`` — that produces top-positioned
 horizontal tabs which contradicts the wireframes.
 
 On HF Spaces (``SPACE_ID`` env present), ``_bootstrap_spaces_cache()``
-runs once on import to symlink HF hub cache snapshots into the
-acestep-apple-silicon fork's ``<site-packages>/checkpoints/`` layout.
-On Mac/Linux locally, it's a no-op.
+runs once on import to (a) hardlink-mirror the build-user-owned HF hub
+cache into a runtime-writable ``~/hf-cache-rw/`` and (b) symlink the
+preloaded snapshots into ``./models/<org>/<repo>/`` so ACE-Step's
+checkpoint resolver finds them. On Mac/Linux locally, it's a no-op —
+local dev uses ``setup.sh``'s site-packages symlink instead.
 """
 
 from __future__ import annotations
@@ -46,6 +48,8 @@ os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 
 import hashlib
 import random
+import shutil  # noqa: F401  (reserved for future cleanup paths)
+import subprocess
 from pathlib import Path
 
 import gradio as gr
@@ -68,64 +72,124 @@ def get_backend() -> be.ACEStepStudioBackend:
     return _BACKEND
 
 
+_PRELOAD_REPOS = (
+    "ACE-Step/Ace-Step1.5",
+    "ACE-Step/acestep-v15-xl-sft",
+)
+
+
+def _hf_cache_rw_dir() -> Path:
+    return Path.home() / "hf-cache-rw"
+
+
+def _mirror_hf_cache() -> None:
+    """Hardlink-mirror the build-user HF hub cache to a runtime-writable location.
+
+    HF Spaces ships the preloaded weights under ~/.cache/huggingface/hub owned by
+    the build user (read-only at runtime). Hardlink them to ~/hf-cache-rw so the
+    runtime user can write new files alongside the preloaded snapshots without
+    paying the storage cost twice.
+    """
+    src = Path.home() / ".cache" / "huggingface"
+    dst = _hf_cache_rw_dir()
+    if dst.exists():
+        return
+    if not src.exists():
+        # Nothing preloaded yet — create the empty target so HF_HOME points somewhere valid.
+        dst.mkdir(parents=True, exist_ok=True)
+        return
+    # `cp -al` = archive + hardlinks → fast, no duplicate bytes.
+    subprocess.run(["cp", "-al", str(src), str(dst)], check=True)
+
+
+def _symlink_snapshots_into_models() -> None:
+    """Create ./models/<org>/<repo>/ → latest snapshot dir for each preloaded repo."""
+    from huggingface_hub import snapshot_download
+
+    project_models = Path("./models").resolve()
+    for repo_id in _PRELOAD_REPOS:
+        # snapshot_download is a no-op when the files are already cached. It returns
+        # the resolved snapshot dir on disk.
+        snap = Path(snapshot_download(repo_id=repo_id, cache_dir=os.environ.get("HF_HOME")))
+        target = project_models / repo_id  # e.g. ./models/ACE-Step/Ace-Step1.5
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() or target.is_symlink():
+            continue
+        target.symlink_to(snap)
+
+
 def _bootstrap_spaces_cache() -> None:
-    """On HF Spaces, mirror the HF hub cache into the site-packages checkpoints/ dir.
+    """On HF Spaces, prepare ./models/<org>/<repo>/ so ACE-Step finds preloaded weights.
 
-    The acestep-apple-silicon fork resolves checkpoints relative to its own install
-    location (``.venv/.../site-packages/checkpoints/``). HF Spaces puts model weights
-    in the HF hub cache. This bootstrap snapshot-downloads the two required repos
-    into the cache (using preload mirror if available) and then symlinks each
-    snapshot child into ``checkpoints/`` so the fork's resolver finds them.
-
-    Local Mac/CUDA: no-op (guarded by ``SPACE_ID`` env var).
+    Skipped locally — local dev uses setup.sh's site-packages symlink instead, since
+    the apple-silicon fork hardcodes its checkpoint resolver to its own install dir.
     """
     if not os.getenv("SPACE_ID"):
         return
-
-    import site
-
-    from huggingface_hub import snapshot_download
-
-    site_pkgs = site.getsitepackages()[0]
-    target_dir = Path(site_pkgs) / "checkpoints"
-
-    if target_dir.exists():
-        return  # already bootstrapped
-
-    hf_home = os.getenv("HF_HOME", "/home/user/.cache/huggingface")
-
-    # Download Ace-Step1.5 umbrella (vae + encoder).
-    umbrella_path = snapshot_download(
-        repo_id="ACE-Step/Ace-Step1.5",
-        cache_dir=hf_home,
-    )
-
-    # Download the XL SFT diffusion variant.
-    xl_sft_path = snapshot_download(
-        repo_id="ACE-Step/acestep-v15-xl-sft",
-        cache_dir=hf_home,
-    )
-
-    # Merge both snapshots into ``checkpoints/`` via symlinks.
-    target_dir.mkdir(parents=True, exist_ok=True)
-    for src_path in [umbrella_path, xl_sft_path]:
-        for child in Path(src_path).iterdir():
-            link = target_dir / child.name
-            if not link.exists():
-                link.symlink_to(child)
+    _mirror_hf_cache()
+    os.environ["HF_HOME"] = str(_hf_cache_rw_dir())
+    _symlink_snapshots_into_models()
 
 
-def _maybe_spaces_gpu():
-    """Return ``@spaces.GPU(duration=180)`` on HF Spaces, otherwise a no-op decorator.
+_GPU_BASE_BY_MODE = {
+    "generate": 30,
+    "cover": 40,
+    "extend": 30,
+    "edit": 30,
+    "lyrics": 15,  # CPU-only typically — lyrics LM runs short on GPU too
+}
+_GPU_CLAMP_MIN = 60
+_GPU_CLAMP_MAX = 300
 
-    The decorator MUST be applied at module load time — ZeroGPU's startup
-    analyzer doesn't see runtime decoration. Local dev is a transparent pass-through.
+
+def _estimate_gpu_duration(mode: str, params: dict, multiplier: float = 1.0) -> int:
+    """Estimate per-call GPU duration in seconds.
+
+    Inputs:
+      mode: one of generate/cover/extend/edit/lyrics
+      params: dict that may contain "duration_s" — the requested audio length
+      multiplier: safety factor (1.0 = nominal, 1.5 = pessimistic)
+
+    Returns int seconds, clamped to [60, 300].
+    """
+    base = _GPU_BASE_BY_MODE.get(mode, 30)
+    duration_s = float(params.get("duration_s") or 30)
+    # Roughly 2x realtime on a ZeroGPU L4 — generation > playback length.
+    estimated = base + duration_s * 2.0 * float(multiplier)
+    return max(_GPU_CLAMP_MIN, min(_GPU_CLAMP_MAX, int(estimated)))
+
+
+def _gpu_call_to_estimator(mode: str, *, duration_arg_index: int = 2):
+    """Bridge spaces.GPU's per-call (*args, **kwargs) → our (mode, params, multiplier) estimator.
+
+    spaces.GPU(duration=callable) invokes the callable with the handler's actual
+    runtime args. The handlers here have signature roughly:
+        on_<mode>_click(prompt_or_seed, lyrics_or_other, duration_s, ...)
+    so duration_s is at position 2 by default. The kwargs path also works.
+    """
+
+    def from_call(*args, **kwargs):
+        duration_s = kwargs.get("duration_s")
+        if duration_s is None and len(args) > duration_arg_index:
+            candidate = args[duration_arg_index]
+            if isinstance(candidate, (int, float)):
+                duration_s = candidate
+        return _estimate_gpu_duration(mode, {"duration_s": duration_s})
+
+    return from_call
+
+
+def _maybe_spaces_gpu(mode: str):
+    """Return ``@spaces.GPU(duration=<callable>)`` on HF Spaces, otherwise a no-op decorator.
+
+    The callable estimator gives long extends/edits the time they need (up to 300s)
+    while keeping short clips fast (60s floor). Off-Spaces this returns identity.
     """
     if os.getenv("SPACE_ID"):
         try:
             import spaces
 
-            return spaces.GPU(duration=180)
+            return spaces.GPU(duration=_gpu_call_to_estimator(mode))
         except ImportError:
             pass
 
@@ -263,7 +327,7 @@ def on_lora_strength_change(state, strength: float):
     return new_state, _active_md(new_state["name"], float(strength), kind)
 
 
-@_maybe_spaces_gpu()
+@_maybe_spaces_gpu("generate")
 def on_generate_click(
     prompt: str,
     lyrics: str,
@@ -292,7 +356,7 @@ def on_generate_click(
     return out_path, meta, new_history
 
 
-@_maybe_spaces_gpu()
+@_maybe_spaces_gpu("cover")
 def on_cover_click(
     ref_audio,
     prompt: str,
@@ -324,7 +388,7 @@ def on_cover_click(
     return out_path, meta, new_history
 
 
-@_maybe_spaces_gpu()
+@_maybe_spaces_gpu("extend")
 def on_extend_click(
     seed_audio,
     extra_prompt: str,
@@ -364,7 +428,7 @@ def on_extend_click(
     return out_path, meta, new_history
 
 
-@_maybe_spaces_gpu()
+@_maybe_spaces_gpu("lyrics")
 def on_draft_lyrics(
     brief: str,
     structure: str,
@@ -442,7 +506,7 @@ def on_export_mp3(audio_path):
     return gr.File(value=str(out), visible=True)
 
 
-@_maybe_spaces_gpu()
+@_maybe_spaces_gpu("edit")
 def on_edit_click(
     source_audio,
     sub_mode: str,
