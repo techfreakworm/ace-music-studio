@@ -11,39 +11,65 @@ _DEMUCS = None
 
 
 def _get_demucs() -> Any:
+    """Lazy-load the htdemucs model.
+
+    Demucs 4.0.x exposes ``demucs.pretrained.get_model`` and
+    ``demucs.apply.apply_model`` — the higher-level
+    ``demucs.api.Separator`` convenience wrapper only appears in 4.1+.
+    We pin to the lower-level API so this works across both pip-installable
+    lines without forcing an upgrade on the apple-silicon torch stack.
+    """
     global _DEMUCS
     if _DEMUCS is None:
-        from demucs.api import Separator
+        from demucs.pretrained import get_model
 
-        _DEMUCS = Separator(model="htdemucs_ft")
+        _DEMUCS = get_model("htdemucs")
     return _DEMUCS
 
 
 def separate_stems(audio_path: Path | str) -> dict[str, Path]:
-    """Split into vocals/drums/bass/other via htdemucs_ft.
+    """Split into vocals/drums/bass/other via htdemucs.
 
-    Returns a dict mapping stem name to written file path.
+    Uses the lower-level ``demucs.apply.apply_model`` so we don't depend
+    on the ``demucs.api.Separator`` wrapper (which only ships with
+    demucs >= 4.1). Returns a dict mapping stem name to written file path.
     """
-    sep = _get_demucs()
-    result = sep.separate_audio_file(str(audio_path))
-    # `result` may be either {name: path} OR (origin, separated) tuple
-    # depending on demucs version. Normalise to dict[str, Path].
-    if isinstance(result, dict):
-        return {name: Path(p) for name, p in result.items()}
-    # Newer demucs returns (origin_tensor, separated_dict_of_tensors)
-    # We persist tensors next to the input file with stem suffixes.
     import soundfile as sf
+    import torch
+    import torchaudio
+    from demucs.apply import apply_model
 
-    _origin, sep_tensors = result
+    model = _get_demucs()
+    target_sr = int(getattr(model, "samplerate", 44100))
+    sources = list(getattr(model, "sources", ["drums", "bass", "other", "vocals"]))
+    audio_channels = int(getattr(model, "audio_channels", 2))
+
+    waveform, sr = torchaudio.load(str(audio_path))  # (channels, frames)
+    if sr != target_sr:
+        waveform = torchaudio.functional.resample(waveform, sr, target_sr)
+    # Match the model's expected channel count (htdemucs is stereo).
+    if waveform.shape[0] == 1 and audio_channels == 2:
+        waveform = waveform.repeat(2, 1)
+    elif waveform.shape[0] > audio_channels:
+        waveform = waveform[:audio_channels]
+
+    # apply_model expects shape (batch, channels, frames).
+    batch = waveform.unsqueeze(0)
+    with torch.no_grad():
+        # apply_model returns (batch, sources, channels, frames).
+        out = apply_model(model, batch, device="cpu", progress=False)
+    out = out[0]  # drop batch dim -> (sources, channels, frames)
+
     base = Path(audio_path).with_suffix("")
     stems: dict[str, Path] = {}
-    for name, tensor in sep_tensors.items():
-        out = base.with_name(f"{base.name}.{name}.wav")
-        data = tensor.detach().cpu().numpy()
+    for idx, name in enumerate(sources):
+        out_path = base.with_name(f"{base.name}.{name}.wav")
+        data = out[idx].cpu().numpy()
+        # soundfile expects (frames, channels); demucs gives (channels, frames)
         if data.ndim == 2 and data.shape[0] in (1, 2):
             data = data.T
-        sf.write(str(out), data, sep.samplerate)
-        stems[name] = out
+        sf.write(str(out_path), data, target_sr)
+        stems[name] = out_path
     return stems
 
 

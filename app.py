@@ -529,7 +529,9 @@ def on_separate_stems(audio_path):
         stems = post_process.separate_stems(audio_path)
     except Exception as e:
         raise gr.Error(f"Demucs failed: {e}") from e
-    return gr.Files(value=list(stems.values()), visible=True)
+    # gr.Files's pydantic FileData model only accepts str paths in Gradio
+    # 6.14; PosixPath objects from separate_stems() trip its validator.
+    return gr.Files(value=[str(p) for p in stems.values()], visible=True)
 
 
 def on_normalise(audio_path):
