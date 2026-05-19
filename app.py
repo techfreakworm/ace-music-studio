@@ -40,6 +40,8 @@ from __future__ import annotations
 
 import os
 
+print("[ams] python process started", flush=True)
+
 # Set MPS fallback BEFORE any torch import path is taken.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
@@ -58,12 +60,16 @@ _VENDORED_ACE_STEP = Path(__file__).resolve().parent / "vendor" / "ace-step"
 if _VENDORED_ACE_STEP.exists() and str(_VENDORED_ACE_STEP) not in sys.path:
     sys.path.insert(0, str(_VENDORED_ACE_STEP))
 
+print(f"[ams] sys.path patched (vendor exists: {_VENDORED_ACE_STEP.exists()})", flush=True)
+
 import hashlib
 import random
 import shutil  # noqa: F401  (reserved for future cleanup paths)
 import subprocess
 
 import gradio as gr
+
+print("[ams] gradio imported", flush=True)
 
 import ace_pipeline
 import backend as be
@@ -72,6 +78,8 @@ import modes
 import post_process
 import theme
 import ui
+
+print("[ams] local modules imported", flush=True)
 
 _BACKEND: be.ACEStepStudioBackend | None = None
 
@@ -293,8 +301,11 @@ def _maybe_spaces_gpu(mode: str):
 
 # Run cache bootstrap at module import so HF Spaces' startup analyzer sees
 # the symlinks before the lazy backend singleton is constructed on first click.
+print("[ams] calling _bootstrap_spaces_cache", flush=True)
 _bootstrap_spaces_cache()
+print("[ams] bootstrap done, calling _warm_demucs_on_spaces", flush=True)
 _warm_demucs_on_spaces()
+print("[ams] warm done", flush=True)
 
 
 def _safe_call(fn, *args, **kwargs):
@@ -991,6 +1002,12 @@ def build_app() -> gr.Blocks:
 
 
 if __name__ == "__main__":
+    print("[ams] building app", flush=True)
     demo = build_app()
+    print("[ams] queueing", flush=True)
     demo.queue(default_concurrency_limit=1)
+    print(
+        f"[ams] launching on port {int(os.environ.get('PORT', 7860))}",
+        flush=True,
+    )
     demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
