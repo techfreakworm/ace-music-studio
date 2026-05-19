@@ -155,13 +155,20 @@ def _symlink_snapshots_into_models() -> None:
 def _bootstrap_spaces_cache() -> None:
     """On HF Spaces, prepare ./models/<org>/<repo>/ so ACE-Step finds preloaded weights.
 
+    Earlier versions tried to ``cp -al`` (hardlink-mirror) the build-user-owned
+    ~/.cache/huggingface into a runtime-writable ~/hf-cache-rw, but on ZeroGPU
+    the HF cache and the home directory live on different filesystems, so
+    hardlinks fail with EXDEV ("Invalid cross-device link"). We don't need
+    the mirror in practice — inference-only workloads READ from the cache,
+    never write to it. Just leave HF_HOME alone (default ~/.cache/huggingface)
+    and symlink the preloaded snapshots into ./models/<org>/<repo>/ for the
+    ACE-Step checkpoint resolver.
+
     Skipped locally — local dev uses setup.sh's site-packages symlink instead, since
     the apple-silicon fork hardcodes its checkpoint resolver to its own install dir.
     """
     if not os.getenv("SPACE_ID"):
         return
-    _mirror_hf_cache()
-    os.environ["HF_HOME"] = str(_hf_cache_rw_dir())
     _symlink_snapshots_into_models()
 
 
