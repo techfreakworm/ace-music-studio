@@ -133,6 +133,7 @@ class _MLXLM:
 
     def generate(self, system: str, user: str, **kw: Any) -> str:
         import mlx.core as mx  # type: ignore[import-not-found]
+        import mlx_lm.generate as mlx_gen_mod  # type: ignore[import-not-found]
         from mlx_lm import generate  # type: ignore[import-not-found]
 
         # Qwen's ChatML template — mlx-lm doesn't expose apply_chat_template
@@ -143,13 +144,22 @@ class _MLXLM:
             f"<|im_start|>assistant\n"
         )
         # Gradio runs handlers in anyio worker threads. MLX maintains a
-        # *per-thread* default stream and bails with "There is no
-        # Stream(gpu, 0) in current thread" when a worker thread that
-        # didn't create the GPU stream tries to use it. Wrapping the
-        # generate() call in ``mx.stream(mx.gpu)`` installs a GPU stream
-        # for the current thread for the duration of the context, which
-        # is what mlx-lm's wired_limit() helper expects.
+        # *per-thread* default stream and a module-level ``generation_stream``
+        # that was created at mlx_lm import time on the MAIN thread. Both
+        # need to be valid in the *current* (worker) thread or
+        # ``wired_limit().__exit__`` crashes with "There is no Stream(gpu, 0)
+        # in current thread" when it calls ``mx.synchronize(generation_stream)``.
+        #
+        # Two-part fix:
+        #   1. ``mx.stream(mx.gpu)`` wrap installs the default GPU stream
+        #      for the current thread for the duration of the call.
+        #   2. Re-assign ``mlx_lm.generate.generation_stream`` to a stream
+        #      created in the *current* thread so ``mx.synchronize`` doesn't
+        #      reach across thread boundaries. The reassignment is safe
+        #      because Gradio's queue runs at default_concurrency_limit=1 —
+        #      no two lyrics drafts run concurrently.
         with mx.stream(mx.gpu):
+            mlx_gen_mod.generation_stream = mx.new_stream(mx.default_device())
             return generate(
                 self.model,
                 self.tokenizer,
