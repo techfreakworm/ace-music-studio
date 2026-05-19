@@ -40,7 +40,9 @@ from __future__ import annotations
 
 import os
 
-print("[ams] python process started", flush=True)
+import sys as _sys
+
+print("[ams] python process started", flush=True, file=_sys.stderr)
 
 # Set MPS fallback BEFORE any torch import path is taken.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -60,7 +62,7 @@ _VENDORED_ACE_STEP = Path(__file__).resolve().parent / "vendor" / "ace-step"
 if _VENDORED_ACE_STEP.exists() and str(_VENDORED_ACE_STEP) not in sys.path:
     sys.path.insert(0, str(_VENDORED_ACE_STEP))
 
-print(f"[ams] sys.path patched (vendor exists: {_VENDORED_ACE_STEP.exists()})", flush=True)
+print(f"[ams] sys.path patched (vendor exists: {_VENDORED_ACE_STEP.exists()})", flush=True, file=_sys.stderr)
 
 import hashlib
 import random
@@ -69,7 +71,7 @@ import subprocess
 
 import gradio as gr
 
-print("[ams] gradio imported", flush=True)
+print("[ams] gradio imported", flush=True, file=_sys.stderr)
 
 import ace_pipeline
 import backend as be
@@ -79,7 +81,7 @@ import post_process
 import theme
 import ui
 
-print("[ams] local modules imported", flush=True)
+print("[ams] local modules imported", flush=True, file=_sys.stderr)
 
 _BACKEND: be.ACEStepStudioBackend | None = None
 
@@ -180,7 +182,7 @@ def _warm_demucs_on_spaces() -> None:
         get_model("htdemucs")
     except Exception as e:
         # Warmup is best-effort. Surface in the log but don't crash startup.
-        print(f"[warmup] demucs htdemucs preload skipped: {e}", flush=True)
+        print(f"[warmup] demucs htdemucs preload skipped: {e}", flush=True, file=_sys.stderr)
 
 
 _GPU_BASE_BY_MODE = {
@@ -301,11 +303,11 @@ def _maybe_spaces_gpu(mode: str):
 
 # Run cache bootstrap at module import so HF Spaces' startup analyzer sees
 # the symlinks before the lazy backend singleton is constructed on first click.
-print("[ams] calling _bootstrap_spaces_cache", flush=True)
+print("[ams] calling _bootstrap_spaces_cache", flush=True, file=_sys.stderr)
 _bootstrap_spaces_cache()
-print("[ams] bootstrap done, calling _warm_demucs_on_spaces", flush=True)
+print("[ams] bootstrap done, calling _warm_demucs_on_spaces", flush=True, file=_sys.stderr)
 _warm_demucs_on_spaces()
-print("[ams] warm done", flush=True)
+print("[ams] warm done", flush=True, file=_sys.stderr)
 
 
 def _safe_call(fn, *args, **kwargs):
@@ -1002,12 +1004,13 @@ def build_app() -> gr.Blocks:
 
 
 if __name__ == "__main__":
-    print("[ams] building app", flush=True)
+    print("[ams] building app", flush=True, file=_sys.stderr)
     demo = build_app()
-    print("[ams] queueing", flush=True)
+    print("[ams] queueing", flush=True, file=_sys.stderr)
     demo.queue(default_concurrency_limit=1)
     print(
         f"[ams] launching on port {int(os.environ.get('PORT', 7860))}",
         flush=True,
+        file=_sys.stderr,
     )
     demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
