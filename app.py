@@ -145,7 +145,7 @@ def _bootstrap_spaces_cache() -> None:
 
 
 def _warm_demucs_on_spaces() -> None:
-    """Pre-download Demucs htdemucs_ft so first stem request is fast.
+    """Pre-download Demucs htdemucs so first stem request is fast.
 
     Demucs hosts its weights on dl.fbaipublicfiles.com, not HF Hub, so
     preload_from_hub can't fetch them. We trigger the download at module load
@@ -158,10 +158,10 @@ def _warm_demucs_on_spaces() -> None:
         from demucs.pretrained import get_model
 
         # Calling get_model triggers the download + cache. Discard the result.
-        get_model("htdemucs_ft")
+        get_model("htdemucs")
     except Exception as e:
         # Warmup is best-effort. Surface in the log but don't crash startup.
-        print(f"[warmup] demucs htdemucs_ft preload skipped: {e}", flush=True)
+        print(f"[warmup] demucs htdemucs preload skipped: {e}", flush=True)
 
 
 _GPU_BASE_BY_MODE = {
