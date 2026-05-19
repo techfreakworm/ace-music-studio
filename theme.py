@@ -195,15 +195,16 @@ main, .contain {{
 .ams-body {{
   gap:12px !important;
   align-items:stretch !important;
-  /* Same flex-shrink fix as ``.ams-content``: without ``min-width: 0`` on
-     the children, a wide audio waveform inside the content column can
-     blow the row past the viewport on mobile. */
+  /* Cap the body at the viewport and clip any horizontal overflow so a
+     long-clip waveform inside .ams-content can't push the row sideways. */
   max-width:100% !important;
   overflow:hidden !important;
 }}
-.ams-body > * {{
-  min-width:0 !important;
-}}
+/* IMPORTANT: do NOT apply ``min-width: 0`` to ``.ams-body > *`` — that
+   selector also matches ``.ams-sidebar``, overriding its 188 px
+   min-width and collapsing it to almost nothing on desktop (seen as a
+   vertical sliver of stacked single characters). The flex-shrink fix
+   we need is on ``.ams-content`` only; sidebar keeps its hard minimum. */
 
 /* ============================================================
  * Sidebar — desktop ≥ 1024
