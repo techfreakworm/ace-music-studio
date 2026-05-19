@@ -160,10 +160,21 @@ def apply_stack(pipe, stack: list[dict]) -> None:
     Apple-Silicon fork supports only one active LoRA at a time
     (see module docstring). Behaviour:
 
-    - ``stack == []``: disable + unload the current LoRA.
-    - ``len(stack) == 1``: load + set scale + enable.
+    - ``stack == []``: disable + unload the current LoRA (no-op if the
+      pipe hasn't been loaded yet — nothing to unload).
+    - ``len(stack) == 1``: load + set scale + enable. Forces a pipeline
+      load if it hasn't happened yet, since the LoRA targets the DiT.
     - ``len(stack) >= 2``: load the first, warn that the rest is ignored.
     """
+    # Empty stack + cold pipe: no DiT to touch, nothing to unload.
+    if not stack and pipe._dit is None:
+        return
+
+    # Non-empty stack but cold pipe: force the lazy-load so we have a DiT
+    # to attach the LoRA to.
+    if stack and pipe._dit is None:
+        pipe._ensure_loaded()
+
     dit = pipe._dit  # internal AceStepHandler reference
     if not stack:
         dit.unload_lora()
