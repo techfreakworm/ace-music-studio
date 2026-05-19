@@ -39,7 +39,6 @@ local dev uses ``setup.sh``'s site-packages symlink instead.
 from __future__ import annotations
 
 import os
-
 import sys as _sys
 
 print("[ams] python process started", flush=True, file=_sys.stderr)
@@ -67,7 +66,6 @@ print(f"[ams] sys.path patched (vendor exists: {_VENDORED_ACE_STEP.exists()})", 
 import hashlib
 import random
 import shutil  # noqa: F401  (reserved for future cleanup paths)
-import subprocess
 
 import gradio as gr
 
@@ -112,64 +110,54 @@ _PRELOAD_REPOS = (
 )
 
 
-def _hf_cache_rw_dir() -> Path:
-    return Path.home() / "hf-cache-rw"
+def _symlink_ace_step_checkpoints() -> None:
+    """Pre-populate the fork's hardcoded checkpoint dir with symlinks to
+    HF-preloaded snapshots so it doesn't trigger its built-in auto-download
+    on first inference.
 
+    The fork's AceStepHandler resolves checkpoints relative to its own
+    install dir (here, vendor/ace-step/checkpoints/). Expected layout:
 
-def _mirror_hf_cache() -> None:
-    """Hardlink-mirror the build-user HF hub cache to a runtime-writable location.
+        vendor/ace-step/checkpoints/
+        ├── <Ace-Step1.5 contents>     ← vae/, encoder/, 5Hz-lm/, … (flat)
+        └── acestep-v15-xl-sft/         ← the XL SFT DiT variant
 
-    HF Spaces ships the preloaded weights under ~/.cache/huggingface/hub owned by
-    the build user (read-only at runtime). Hardlink them to ~/hf-cache-rw so the
-    runtime user can write new files alongside the preloaded snapshots without
-    paying the storage cost twice.
+    Without this, initialize_service() kicks off an async auto-download,
+    returns before it finishes, then generate_music() hits
+    "Model not fully initialized" on the first user click.
     """
-    src = Path.home() / ".cache" / "huggingface"
-    dst = _hf_cache_rw_dir()
-    if dst.exists():
-        return
-    if not src.exists():
-        # Nothing preloaded yet — create the empty target so HF_HOME points somewhere valid.
-        dst.mkdir(parents=True, exist_ok=True)
-        return
-    # `cp -al` = archive + hardlinks → fast, no duplicate bytes.
-    subprocess.run(["cp", "-al", str(src), str(dst)], check=True)
-
-
-def _symlink_snapshots_into_models() -> None:
-    """Create ./models/<org>/<repo>/ → latest snapshot dir for each preloaded repo."""
     from huggingface_hub import snapshot_download
 
-    project_models = Path("./models").resolve()
-    for repo_id in _PRELOAD_REPOS:
-        # snapshot_download is a no-op when the files are already cached. It returns
-        # the resolved snapshot dir on disk.
-        snap = Path(snapshot_download(repo_id=repo_id, cache_dir=os.environ.get("HF_HOME")))
-        target = project_models / repo_id  # e.g. ./models/ACE-Step/Ace-Step1.5
-        target.parent.mkdir(parents=True, exist_ok=True)
+    checkpoints_dir = _VENDORED_ACE_STEP / "checkpoints"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+    # Umbrella repo → symlink each top-level entry flat into checkpoints/.
+    # snapshot_download is a no-op when files are already preloaded into the
+    # HF cache; it just returns the snapshot dir on disk.
+    umbrella = Path(snapshot_download(repo_id="ACE-Step/Ace-Step1.5"))
+    for child in umbrella.iterdir():
+        target = checkpoints_dir / child.name
         if target.exists() or target.is_symlink():
             continue
-        target.symlink_to(snap)
+        target.symlink_to(child)
+
+    # XL SFT DiT variant → as the subdir name the fork looks for.
+    xl_snap = Path(snapshot_download(repo_id="ACE-Step/acestep-v15-xl-sft"))
+    xl_target = checkpoints_dir / "acestep-v15-xl-sft"
+    if not (xl_target.exists() or xl_target.is_symlink()):
+        xl_target.symlink_to(xl_snap)
 
 
 def _bootstrap_spaces_cache() -> None:
-    """On HF Spaces, prepare ./models/<org>/<repo>/ so ACE-Step finds preloaded weights.
+    """On HF Spaces, point the fork's checkpoint resolver at preloaded snapshots.
 
-    Earlier versions tried to ``cp -al`` (hardlink-mirror) the build-user-owned
-    ~/.cache/huggingface into a runtime-writable ~/hf-cache-rw, but on ZeroGPU
-    the HF cache and the home directory live on different filesystems, so
-    hardlinks fail with EXDEV ("Invalid cross-device link"). We don't need
-    the mirror in practice — inference-only workloads READ from the cache,
-    never write to it. Just leave HF_HOME alone (default ~/.cache/huggingface)
-    and symlink the preloaded snapshots into ./models/<org>/<repo>/ for the
-    ACE-Step checkpoint resolver.
-
-    Skipped locally — local dev uses setup.sh's site-packages symlink instead, since
-    the apple-silicon fork hardcodes its checkpoint resolver to its own install dir.
+    Skipped locally — local dev uses setup.sh's site-packages symlink instead,
+    since the apple-silicon fork hardcodes its checkpoint resolver to its own
+    install dir.
     """
     if not os.getenv("SPACE_ID"):
         return
-    _symlink_snapshots_into_models()
+    _symlink_ace_step_checkpoints()
 
 
 def _warm_demucs_on_spaces() -> None:

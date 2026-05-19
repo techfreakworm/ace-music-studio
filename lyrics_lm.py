@@ -195,9 +195,14 @@ class _HFLM:
             repetition_penalty=float(kw.get("repetition_penalty", 1.1)),
             do_sample=True,
         )
-        full = self.tokenizer.decode(out[0], skip_special_tokens=True)
-        # Strip the prompt prefix so only the generated text remains.
-        return full[len(prompt) :] if full.startswith(prompt) else full
+        # Slice off the prompt tokens at the *token* level. Doing it at the
+        # string level (full.startswith(prompt)) is brittle because
+        # ``skip_special_tokens=True`` strips the ChatML markers from
+        # ``full`` but they're still present in ``prompt`` — so the prefix
+        # match fails and the system + user turns leak into the output.
+        prompt_len = int(inputs["input_ids"].shape[1])
+        generated_ids = out[0][prompt_len:]
+        return self.tokenizer.decode(generated_ids, skip_special_tokens=True)
 
 
 def generate_lyrics(
