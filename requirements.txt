@@ -1,21 +1,38 @@
-# gradio is injected by HF Spaces per README sdk_version. The apple-silicon
-# ace-step fork allows gradio>=6.5.1; we keep sdk_version at 6.14.0.
-transformers>=4.45,<5
+# gradio is injected by HF Spaces per README sdk_version (6.14.0).
+# transformers — pinned narrower to match ace-step's range (4.51.0–4.57.x).
+transformers>=4.51.0,<4.58.0
 torch>=2.4
 torchaudio>=2.4
 safetensors>=0.4
 peft>=0.13
 demucs>=4.0
 pyloudnorm>=0.1.1
-soundfile>=0.12
+soundfile>=0.13.1
 librosa>=0.10
 huggingface_hub>=0.25
 hf_transfer>=0.1.9
 numpy>=1.26,<2
-# Use the apple-silicon fork on all platforms — upstream ace-step pins
-# gradio==6.2.0 and requires nano-vllm (not on PyPI) on Linux. The fork
-# declares torch==2.10.0 for Linux + has a looser gradio pin.
-ace-step @ git+https://github.com/clockworksquirrel/ace-step-apple-silicon.git
+# --- ace-step's transitive deps (NOT installing ace-step itself; it's
+# vendored as a git submodule at vendor/ace-step. The submodule's
+# pyproject pins nano-vllm; sys_platform != "darwin" which isn't on PyPI,
+# so we list ace-step's deps directly and bypass the pip install of the
+# package. app.py adds vendor/ace-step to sys.path before importing. ---
+diffusers
+matplotlib>=3.7.5
+scipy>=1.10.1
+loguru>=0.7.3
+einops>=0.8.1
+accelerate>=1.12.0
+fastapi>=0.110.0
+diskcache
+uvicorn[standard]>=0.27.0
+numba>=0.63.1
+vector-quantize-pytorch>=1.27.15
+torchcodec>=0.9.1
+torchao
+toml
+lightning>=2.0.0
+modelscope
 # HF Spaces ZeroGPU. Do NOT pin — HF's ZeroGPU build injects its own version
 # and a pin causes pip-resolve failure. Locally the `import spaces` in
 # app._maybe_spaces_gpu() is wrapped in try/except so absence is fine.

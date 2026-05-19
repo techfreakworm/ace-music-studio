@@ -1,0 +1,3 @@
+[submodule "vendor/ace-step"]
+	path = vendor/ace-step
+	url = https://github.com/clockworksquirrel/ace-step-apple-silicon.git

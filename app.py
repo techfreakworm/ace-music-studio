@@ -46,11 +46,22 @@ os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 # Don't pin HF download source — let HF default for both Spaces and local cache.
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 
+# Vendored ace-step (git submodule at vendor/ace-step/) — added to sys.path
+# BEFORE any module that imports `from acestep import ...`. We vendor
+# instead of pip-installing because the upstream pyproject.toml declares
+# `nano-vllm; sys_platform != "darwin"`, a path-source dep not on PyPI
+# that breaks `pip install -r requirements.txt` on HF Spaces (Linux).
+import sys
+from pathlib import Path
+
+_VENDORED_ACE_STEP = Path(__file__).resolve().parent / "vendor" / "ace-step"
+if _VENDORED_ACE_STEP.exists() and str(_VENDORED_ACE_STEP) not in sys.path:
+    sys.path.insert(0, str(_VENDORED_ACE_STEP))
+
 import hashlib
 import random
 import shutil  # noqa: F401  (reserved for future cleanup paths)
 import subprocess
-from pathlib import Path
 
 import gradio as gr
 
