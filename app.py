@@ -159,21 +159,69 @@ def _estimate_gpu_duration(mode: str, params: dict, multiplier: float = 1.0) -> 
     return max(_GPU_CLAMP_MIN, min(_GPU_CLAMP_MAX, int(estimated)))
 
 
-def _gpu_call_to_estimator(mode: str, *, duration_arg_index: int = 2):
+# Per-mode hints for where the duration is in the handler's call args.
+# Each entry: (positional_index, kwarg_name).
+# For "edit" mode, the duration is computed as (segment_end_s - segment_start_s).
+# For "lyrics", there's no audio duration; we just default.
+_GPU_DURATION_HINTS: dict[str, tuple[int, str] | str | None] = {
+    "generate": (2, "duration_s"),
+    "cover": (3, "duration_s"),
+    "extend": (3, "extra_duration_s"),
+    "edit": "segment_window",  # special: end - start
+    "lyrics": None,  # no audio length
+}
+
+
+def _extract_duration_s(mode: str, args: tuple, kwargs: dict) -> float | None:
+    """Pull the requested audio duration out of a handler's call args, mode-aware.
+
+    Returns None when the mode has no audio duration concept (lyrics) or when
+    the value can't be found. Caller falls back to a per-mode default.
+    """
+    hint = _GPU_DURATION_HINTS.get(mode)
+    if hint is None:
+        return None
+
+    if hint == "segment_window":
+        # edit: (source_audio, sub_mode, source_lyrics, target_lyrics, segment_start_s, segment_end_s, ...)
+        start = kwargs.get("segment_start_s")
+        end = kwargs.get("segment_end_s")
+        if start is None and len(args) > 4:
+            start = args[4] if isinstance(args[4], (int, float)) else None
+        if end is None and len(args) > 5:
+            end = args[5] if isinstance(args[5], (int, float)) else None
+        if start is not None and end is not None:
+            window = float(end) - float(start)
+            return window if window > 0 else None
+        return None
+
+    pos_idx, kw_name = hint
+    if kw_name in kwargs and isinstance(kwargs[kw_name], (int, float)):
+        return float(kwargs[kw_name])
+    if len(args) > pos_idx and isinstance(args[pos_idx], (int, float)):
+        return float(args[pos_idx])
+    return None
+
+
+def _gpu_call_to_estimator(mode: str):
     """Bridge spaces.GPU's per-call (*args, **kwargs) → our (mode, params, multiplier) estimator.
 
-    spaces.GPU(duration=callable) invokes the callable with the handler's actual
-    runtime args. The handlers here have signature roughly:
-        on_<mode>_click(prompt_or_seed, lyrics_or_other, duration_s, ...)
-    so duration_s is at position 2 by default. The kwargs path also works.
+    Per-mode duration extraction handles the different signatures of the five
+    handlers. Falls back to a per-mode default when extraction fails so the
+    estimator still produces a reasonable timeout.
     """
 
     def from_call(*args, **kwargs):
-        duration_s = kwargs.get("duration_s")
-        if duration_s is None and len(args) > duration_arg_index:
-            candidate = args[duration_arg_index]
-            if isinstance(candidate, (int, float)):
-                duration_s = candidate
+        duration_s = _extract_duration_s(mode, args, kwargs)
+        if duration_s is None:
+            # Per-mode default when no duration found in call args.
+            duration_s = {
+                "generate": 30.0,
+                "cover": 30.0,
+                "extend": 20.0,
+                "edit": 8.0,  # typical edit segment window
+                "lyrics": 0.0,  # no audio; base alone
+            }.get(mode, 30.0)
         return _estimate_gpu_duration(mode, {"duration_s": duration_s})
 
     return from_call
