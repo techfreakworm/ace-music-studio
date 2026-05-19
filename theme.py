@@ -492,20 +492,35 @@ main, .contain {{
 }}
 .ams-content .ams-out-audio {{
   min-height:90px !important;
-  /* Wavesurfer's waveform renders one pixel per audio frame at the
-     ``minPxPerSec`` rate; for a 60 s clip that can exceed the
-     column's width. Cage it so it can't push the parent wider. */
+  /* Outer panel: cage everything so a long-clip wavesurfer canvas
+     can't push the parent column wider than the viewport. The inner
+     wavesurfer layout below is allowed to render freely — we only
+     clip at THIS boundary. */
   min-width:0 !important;
   max-width:100% !important;
   overflow:hidden !important;
 }}
-.ams-content .ams-out-audio .component-wrapper,
+/* Inner wavesurfer wrappers: let them lay out their grid/flex children
+   freely. Earlier we set ``overflow: hidden`` on these too, which
+   hid the play/skip controls + 1:00 timestamp during transient
+   wavesurfer re-renders (controls would briefly compute wider than
+   the wrapper and get clipped → user saw the "fluctuating" preview).
+   Width / max-width caps remain so the layout still respects the
+   viewport. */
+.ams-content .ams-out-audio .component-wrapper {{
+  width:100% !important;
+  max-width:100% !important;
+  min-width:0 !important;
+  overflow:visible !important;
+}}
 .ams-content .ams-out-audio .waveform-container,
 .ams-content .ams-out-audio [data-testid^="waveform"],
 .ams-content .ams-out-audio #waveform {{
   width:100% !important;
   max-width:100% !important;
   min-width:0 !important;
+  /* Clip the canvas only — keep the wave bars from spilling but let
+     the parent containers show their controls. */
   overflow:hidden !important;
 }}
 /* Wavesurfer renders a <canvas> sized in CSS pixels from the audio
@@ -513,6 +528,23 @@ main, .contain {{
 .ams-content .ams-out-audio canvas,
 .ams-content .ams-out-audio wave {{
   max-width:100% !important;
+}}
+/* Reserve vertical space for the timestamps row and the controls
+   row so they NEVER collapse to zero during a wavesurfer re-render
+   transition. Without this min-height, the play/skip/forward icons
+   briefly vanish on mobile after a generation completes, giving the
+   "preview is fluctuating" look. */
+.ams-content .ams-out-audio .timestamps {{
+  min-height:24px !important;
+  overflow:visible !important;
+}}
+.ams-content .ams-out-audio .controls {{
+  min-height:60px !important;
+  overflow:visible !important;
+}}
+.ams-content .ams-out-audio .play-pause-wrapper,
+.ams-content .ams-out-audio .control-wrapper {{
+  min-width:0 !important;
 }}
 .ams-content .ams-out-meta {{
   min-height:80px !important;
