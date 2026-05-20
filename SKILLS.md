@@ -18,12 +18,12 @@ For shape / data bugs: read the stack trace fully, identify the line, then read 
 
 ### Pull HF Space logs when something runs there
 
-For Spaces failures, the run logs are the source of truth.
+For Spaces failures, the run logs are the source of truth. **Repo name is case-sensitive: `techfreakworm/ACE-Music-Studio`** (uppercase A/M/S — matches the Pascal-cased Space name).
 
 ```bash
-HF_TOKEN=$(cat ~/.cache/huggingface/token)
+HF_TOKEN=$(grep hf_token ~/.cache/huggingface/stored_tokens | cut -d'=' -f2 | tr -d ' ')
 curl -s -H "Authorization: Bearer ${HF_TOKEN}" \
-  "https://huggingface.co/api/spaces/techfreakworm/ace-music-studio/logs/run" \
+  "https://huggingface.co/api/spaces/techfreakworm/ACE-Music-Studio/logs/run" \
   > /tmp/hf-runtime.log
 
 # Decode the SSE-style `data: {...}` lines
@@ -44,13 +44,28 @@ tail -100 /tmp/hf-runtime-decoded.log
 
 `/logs/run` is runtime container output. `/logs/build` is the image-build phase (pip install, preload, etc.). Different problems, different endpoints.
 
+**Important: the `/logs/run` endpoint streams LIVE events from subscription time onward** — older events from earlier in the container's lifetime are NOT replayed. To capture an error that happened minutes ago, restart the Space or repro the failure with the stream open.
+
 ### Stage check before action
 
 ```bash
-curl -s https://huggingface.co/api/spaces/techfreakworm/ace-music-studio/runtime | python3 -m json.tool
+curl -s -H "Authorization: Bearer ${HF_TOKEN}" \
+  https://huggingface.co/api/spaces/techfreakworm/ACE-Music-Studio \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); rs=d.get('runtime',{}); print('stage:',rs.get('stage'),'sha:',d.get('sha','')[:7],'hw:',rs.get('hardware'),'err:',rs.get('errorMessage'))"
 ```
 
-Terminal stages: `RUNNING`, `RUNTIME_ERROR`, `BUILD_ERROR`. Transient: `BUILDING`, `APP_STARTING`, `RUNNING_BUILDING` (live serving while a new build runs). Always check `errorMessage` first when stage is non-RUNNING.
+Terminal stages: `RUNNING`, `RUNTIME_ERROR`, `BUILD_ERROR`, `SLEEPING`, `PAUSED`, `STOPPED`. Transient: `BUILDING`, `APP_STARTING`, `RUNNING_BUILDING` (live serving while a new build runs). Always check `errorMessage` first when stage is non-RUNNING.
+
+### Client-side "Error" with no backend trace
+
+If the UI shows a Gradio "Error" toast/placeholder but `/logs/run` shows the function completed (and the file was saved to `/home/user/app/output/<uuid>.wav`), the culprit is the **Cloudflare proxy SSE idle-timeout at ~80 s**. ZeroGPU's queue wait is silent — no progress events emitted while waiting for GPU allocation → SSE drops → client gives up before the response reaches it. The function still runs to completion. This is NOT a code bug; it's infrastructure timing.
+
+Tells:
+- Browser console shows `The user aborted a request.` at ~80 s intervals
+- `/logs/run` shows `[AudioSaver] Saved audio to /home/user/app/output/<uuid>.wav`
+- Gradio's `.ams-out-audio` has a `<span class="error">Error</span>` overlay but no actual error message in any toast
+
+There's no clean client-side fix. Mitigations: keep the GPU pre-allocated by exercising a small request on schedule, or upgrade the Space to dedicated hardware so queue waits go away.
 
 ### Sequential thinking for repeated failures
 
@@ -128,57 +143,94 @@ The repo has two remotes:
 
 ```
 origin  → git@github.com:techfreakworm/ace-music-studio.git
-space   → https://huggingface.co/spaces/techfreakworm/ace-music-studio
+space   → https://huggingface.co/spaces/techfreakworm/ACE-Music-Studio
 ```
 
 To push:
 
 ```bash
 git push origin main
-git push space main
+git -c credential.helper=osxkeychain push space main
 ```
+
+The `-c credential.helper=osxkeychain` is required for the HF HTTPS push — the token was stored in the macOS keychain at deploy time (see AGENTS.md "Deploy state"). The user's SSH config handles GitHub; HF needs HTTPS + token.
 
 After the `space` push, HF starts rebuilding. Watch:
 
 ```bash
-TOKEN=$(cat ~/.cache/huggingface/token)
-while true; do
-  STATE=$(curl -s -H "Authorization: Bearer $TOKEN" \
-    https://huggingface.co/api/spaces/techfreakworm/ace-music-studio/runtime \
-    | python3 -c "import json,sys; print(json.load(sys.stdin).get('stage','?'))")
-  echo "$(date +%H:%M:%S) $STATE"
-  case "$STATE" in
-    RUNNING|BUILD_ERROR|RUNTIME_ERROR) break ;;
-  esac
-  sleep 30
-done
+TOKEN=$(grep hf_token ~/.cache/huggingface/stored_tokens | cut -d'=' -f2 | tr -d ' ')
+until curl -s -H "Authorization: Bearer $TOKEN" \
+  https://huggingface.co/api/spaces/techfreakworm/ACE-Music-Studio \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); rs=d.get('runtime',{}); s=rs.get('stage',''); sha=d.get('sha','')[:7]; print(f'{s} {sha}', flush=True); sys.exit(0 if s in ('RUNNING','BUILD_ERROR','RUNTIME_ERROR') else 1)"; do sleep 30; done
 ```
 
-Typical build time: ~5 min after weights are cached. First build with new preload globs: ~15–20 min.
+Typical hot build (cached, only README change): ~30 s + ~2 min APP_STARTING.
+Typical warm build (one new dep): ~3 min build + ~3 min APP_STARTING.
+Cold first build with all 41.5 GB preloads: ~15 min total.
+
+### HF Spaces build failure modes (in order of how often we hit each)
+
+1. **`No matching distribution found for nano-vllm`** — requirements.txt is trying to pip-install ace-step. Don't; use the vendored submodule + sys.path injection.
+2. **`Package 'ace-step' requires a different Python: 3.13.x not in '<3.13,>=3.11'`** — README YAML missing `python_version: "3.11"`.
+3. **`gradio==6.2.0` conflict with `gradio[oauth,mcp]==<sdk_version>`** — ace-step upstream pins gradio strictly. Use the apple-silicon fork.
+4. **`"short_description" length must be less than or equal to 60 characters`** — pre-receive hook validates YAML. Tighten the README description.
+5. **`cp: cannot create hard link … 'Invalid cross-device link'`** — don't `cp -al` the HF cache; the EXDEV failure is unavoidable on ZeroGPU.
+6. **`PermissionError: '/home/user/.cache/huggingface/modules'`** — set `HF_MODULES_CACHE=/tmp/hf-modules` before any `trust_remote_code=True` import.
+7. **`Model not fully initialized`** — preload symlinks aren't in `vendor/ace-step/checkpoints/`. Run `_symlink_ace_step_checkpoints()` at module load.
+8. **`Fast download using 'hf_transfer' is enabled but 'hf_transfer' package is not available`** — add `hf_transfer>=0.1.9` to requirements.txt.
+
+### Submodule maintenance
+
+```bash
+# Pull latest upstream changes from the apple-silicon fork
+git submodule update --remote vendor/ace-step
+git add vendor/ace-step
+git commit -m "chore(vendor): bump ace-step to <sha>"
+
+# On a fresh clone, initialize submodules (HF Spaces does --recurse-submodules automatically)
+git submodule update --init --recursive
+```
+
+When bumping the submodule, check the new fork's `pyproject.toml` diff for added/removed deps — those must be reflected in our top-level `requirements.txt` since we don't pip-install ace-step itself.
 
 ### Don't push during HF testing
 
 When the user is actively testing on the live Space, hold local commits — don't push mid-test. They'll explicitly say "push it now" when they're ready.
 
+### Force-push to fresh HF Space (one-time bootstrap)
+
+HF auto-creates a template `README.md` when a Space is created. The first push from your local repo will hit `! [rejected]  main -> main (fetch first)`. Apple's bundled git 2.39.5 ALSO can't fetch from HF (`fatal: expected 'acknowledgments'`). Force-push the bootstrap:
+
+```bash
+git -c credential.helper=osxkeychain push -f space main
+```
+
+Only do this for a fresh Space. Subsequent pushes are fast-forward.
+
 ---
 
 ## Adding a new model / weight
 
-1. Add a `ModelConfig(...)` entry to `models.MODEL_CONFIGS`.
+1. Add the repo ID to `_PRELOAD_REPOS` in `app.py` so the HF Spaces build downloads it.
 2. Add the file (or glob) to `preload_from_hub:` in `README.md`'s YAML frontmatter.
-3. Run tests, restart server, verify in browser, then commit.
+3. If the model needs symlinking into `vendor/ace-step/checkpoints/` (because the fork's loader expects a specific path), extend `_symlink_ace_step_checkpoints()`.
+4. If `trust_remote_code=True` is used to load it, double-check `HF_MODULES_CACHE=/tmp/hf-modules` is still in `app.py`'s env-var block.
+5. Run tests, restart server, verify in browser, then commit.
+6. **Watch the new build closely** — preload size is now ~41.5 GB; another large repo might bump us over the ZeroGPU 70 GB disk cap.
 
 ---
 
 ## Adding a new mode / tab
 
 1. Spec the new mode in `docs/superpowers/specs/` first. Don't skip this.
-2. Add a `call_<mode>(pipe, params)` to `modes.py`. Same shape as the existing handlers.
-3. Add a `build_<mode>_tab()` to `ui.py`. Use the existing tabs as template.
-4. Wire `on_<mode>_generate()` in `app.py` with `progress=gr.Progress(track_tqdm=True)`. Connect `c["generate_btn"].click(...)`.
-5. Add tests in `tests/test_modes.py` mocking the `pipe` boundary.
-6. Update tooltips dict in `tooltips.py`.
-7. Update the spec + plan to reflect the new mode.
+2. Add a `<mode>(backend, params)` handler to `modes.py`. Same shape as the existing handlers (generate / cover / extend / edit / lyrics).
+3. Add a `build_<mode>_tab()` to `ui.py`. Use the existing tabs as template. Include `_build_lora_accordion(c)` + `_build_advanced_accordion(c)` + `_build_output_panel(c)` if it's a song mode.
+4. Add `_GPU_DURATION_HINTS["<mode>"]` to `app.py` — tell the per-mode duration estimator where to find `duration_s` in the handler's args.
+5. Wire `on_<mode>_click()` in `app.py` with `progress=gr.Progress(track_tqdm=True)` and `@_maybe_spaces_gpu("<mode>")`. The handler must accept all 21 advanced inputs at the end of its signature and pack them into `params["advanced"]` + `params["lm"]` dicts. Connect `c["generate_btn"].click(inputs=[...], outputs=[c["output_audio"], c["output_meta"], history_html])`.
+6. Add a branch to `ace_pipeline.ACEStepStudio.generate()` for any new `task_type`.
+7. Add tests in `tests/test_modes_other.py` (or similar) mocking the `pipe` boundary.
+8. Update tooltips in `tooltips.py` and the Advanced accordion builder if the mode needs different knobs.
+9. Update the spec + plan to reflect the new mode.
 
 ---
 
