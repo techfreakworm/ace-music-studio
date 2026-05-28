@@ -1068,7 +1068,7 @@ def build_app() -> gr.Blocks:
                         fn=on_normalise,
                         inputs=[g["output_audio"]],
                         outputs=[g["normalised_audio"]],
-                    )
+                    ).then(fn=None, js="() => window.dispatchEvent(new Event('resize'))")
                     g["mp3_btn"].click(
                         fn=on_export_mp3,
                         inputs=[g["output_audio"]],
@@ -1134,7 +1134,7 @@ def build_app() -> gr.Blocks:
                         fn=on_normalise,
                         inputs=[c["output_audio"]],
                         outputs=[c["normalised_audio"]],
-                    )
+                    ).then(fn=None, js="() => window.dispatchEvent(new Event('resize'))")
                     c["mp3_btn"].click(
                         fn=on_export_mp3,
                         inputs=[c["output_audio"]],
@@ -1204,7 +1204,7 @@ def build_app() -> gr.Blocks:
                         fn=on_normalise,
                         inputs=[x["output_audio"]],
                         outputs=[x["normalised_audio"]],
-                    )
+                    ).then(fn=None, js="() => window.dispatchEvent(new Event('resize'))")
                     x["mp3_btn"].click(
                         fn=on_export_mp3,
                         inputs=[x["output_audio"]],
@@ -1277,7 +1277,7 @@ def build_app() -> gr.Blocks:
                         fn=on_normalise,
                         inputs=[e["output_audio"]],
                         outputs=[e["normalised_audio"]],
-                    )
+                    ).then(fn=None, js="() => window.dispatchEvent(new Event('resize'))")
                     e["mp3_btn"].click(
                         fn=on_export_mp3,
                         inputs=[e["output_audio"]],
