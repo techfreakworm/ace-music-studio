@@ -794,7 +794,7 @@ def on_normalise(audio_path):
         out = post_process.normalise_lufs(audio_path, target_lufs=-14.0)
     except Exception as e:
         raise gr.Error(f"Normalisation failed: {e}") from e
-    return gr.Audio(value=str(out), visible=True)
+    return gr.update(value=str(out), visible=True)
 
 
 def on_export_mp3(audio_path):
@@ -805,7 +805,7 @@ def on_export_mp3(audio_path):
         out = post_process.to_mp3(audio_path, bitrate_kbps=320)
     except Exception as e:
         raise gr.Error(f"MP3 export failed: {e}") from e
-    return gr.File(value=str(out), visible=True)
+    return gr.update(value=str(out), visible=True)
 
 
 @_maybe_spaces_gpu("edit")

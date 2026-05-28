@@ -44,7 +44,7 @@ _CHECKPOINTS_DIR = _REPO_ROOT / "checkpoints"
 _OUTPUT_DIR = _REPO_ROOT / "output"
 
 _DEFAULT_DIT_CONFIG = "acestep-v15-xl-sft"
-_DEFAULT_LM_MODEL = "acestep-5Hz-lm-0.6B"
+_DEFAULT_LM_MODEL = "acestep-5Hz-lm-1.7B"
 
 
 def detect_device() -> str:
