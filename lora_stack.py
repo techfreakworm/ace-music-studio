@@ -27,9 +27,12 @@ from pathlib import Path
 
 _log = logging.getLogger("ams.lora")
 
-# Expected DiT module suffixes for ACE-Step 1.5 XL SFT.
-# Match against `*.to_q.lora_A.weight`, etc.
-_EXPECTED_MODULES = {"to_q", "to_k", "to_v", "to_out.0", "ff.net.0.proj", "ff.net.2"}
+# ACE-Step v1 / diffusers-style DiT: transformer.blocks.X.attn.to_q …
+_EXPECTED_MODULES_V1 = {"to_q", "to_k", "to_v", "to_out.0", "ff.net.0.proj", "ff.net.2"}
+# ACE-Step v1.5 XL SFT: LLM-style naming — layers.X.cross_attn.k_proj …
+# LoRAs trained with PEFT wrap these as base_model.model.layers.X.cross_attn.k_proj
+_EXPECTED_MODULES_XL = {"q_proj", "k_proj", "v_proj", "o_proj"}
+_EXPECTED_MODULES = _EXPECTED_MODULES_V1 | _EXPECTED_MODULES_XL
 _MAX_FILE_BYTES = 500 * 1024 * 1024  # 500 MB cap
 _MAX_RANK = 256
 
@@ -91,12 +94,16 @@ def sniff(path: Path | str) -> LoRAInfo:
             continue
         if not isinstance(v, dict) or "shape" not in v:
             continue
-        # ACE-Step DiT keys start with "transformer." (the diffusers DiT prefix).
-        # SDXL UNet LoRAs start with "unet." — reject those even though the
-        # inner attention layer names overlap (`.to_q.lora_A.weight`).
-        if k.startswith("transformer.") or k.startswith("transformer_blocks."):
+        # v1 / diffusers DiT: keys start with "transformer." or "transformer_blocks."
+        # v1.5 XL SFT + PEFT: keys start with "base_model.model.layers."
+        # Reject SDXL UNet ("unet.") and LLM-only LoRAs even if they share suffix names.
+        if (
+            k.startswith("transformer.")
+            or k.startswith("transformer_blocks.")
+            or k.startswith("base_model.model.layers.")
+        ):
             has_ace_prefix = True
-        # Extract module suffix from things like "transformer.blocks.0.attn.to_q.lora_A.weight"
+        # Extract module suffix from both naming conventions.
         for suffix in _EXPECTED_MODULES:
             if f".{suffix}.lora_A.weight" in k or f".{suffix}.lora_B.weight" in k:
                 target_modules.add(suffix)
@@ -109,7 +116,8 @@ def sniff(path: Path | str) -> LoRAInfo:
         "OK"
         if compatible
         else (
-            f"Expected ACE-Step DiT modules ({sorted(_EXPECTED_MODULES)}), got modules in: "
+            f"Expected ACE-Step DiT modules (v1: {sorted(_EXPECTED_MODULES_V1)} or "
+            f"XL SFT: {sorted(_EXPECTED_MODULES_XL)}), got modules in: "
             f"{sorted(set(header.keys()) - {'__metadata__'})[:3]}…"
         )
     )
