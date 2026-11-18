@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "repos": [
+    {
+      "key": "ace-step",
+      "repo_id": "ACE-Step/Ace-Step1.5",
+      "revision": "19671f406d603126926c1b7e2adc169acbcade22",
+      "startup": "required",
+      "files": [
+        {"path": "Qwen3-Embedding-0.6B/added_tokens.json", "size": 707},
+        {"path": "Qwen3-Embedding-0.6B/chat_template.jinja", "size": 4116},
+        {"path": "Qwen3-Embedding-0.6B/config.json", "size": 1359},
+        {"path": "Qwen3-Embedding-0.6B/merges.txt", "size": 1671853},
+        {"path": "Qwen3-Embedding-0.6B/model.safetensors", "size": 1191586416},
+        {"path": "Qwen3-Embedding-0.6B/special_tokens_map.json", "size": 613},
+        {"path": "Qwen3-Embedding-0.6B/tokenizer.json", "size": 11423705},
+        {"path": "Qwen3-Embedding-0.6B/tokenizer_config.json", "size": 5404},
+        {"path": "Qwen3-Embedding-0.6B/vocab.json", "size": 2776833},
+        {"path": "acestep-5Hz-lm-1.7B/added_tokens.json", "size": 2217787},
+        {"path": "acestep-5Hz-lm-1.7B/chat_template.jinja", "size": 4168},
+        {"path": "acestep-5Hz-lm-1.7B/config.json", "size": 1385},
+        {"path": "acestep-5Hz-lm-1.7B/merges.txt", "size": 1671853},
+        {"path": "acestep-5Hz-lm-1.7B/model.safetensors", "size": 3708521528},
+        {"path": "acestep-5Hz-lm-1.7B/special_tokens_map.json", "size": 1824199},
+        {"path": "acestep-5Hz-lm-1.7B/tokenizer.json", "size": 24321939},
+        {"path": "acestep-5Hz-lm-1.7B/tokenizer_config.json", "size": 14072925},
+        {"path": "acestep-5Hz-lm-1.7B/vocab.json", "size": 2776833},
+        {"path": "acestep-v15-turbo/config.json", "size": 1968},
+        {"path": "vae/config.json", "size": 425},
+        {"path": "vae/diffusion_pytorch_model.safetensors", "size": 337431388}
+      ]
+    },
+    {
+      "key": "ace-step-xl-sft",
+      "repo_id": "ACE-Step/acestep-v15-xl-sft",
+      "revision": "d06de46b4622f781cf07f4a013a67d591ca52819",
+      "startup": "required",
+      "files": [
+        {"path": "apg_guidance.py", "size": 8340},
+        {"path": "config.json", "size": 2525},
+        {"path": "configuration_acestep_v15.py", "size": 13225},
+        {"path": "model-00001-of-00004.safetensors", "size": 4986971456},
+        {"path": "model-00002-of-00004.safetensors", "size": 4986942776},
+        {"path": "model-00003-of-00004.safetensors", "size": 4986942808},
+        {"path": "model-00004-of-00004.safetensors", "size": 4988483464},
+        {"path": "model.safetensors.index.json", "size": 71471},
+        {"path": "modeling_acestep_v15_xl_base.py", "size": 105981},
+        {"path": "silence_latent.pt", "size": 3841215}
+      ]
+    },
+    {
+      "key": "qwen2.5-7b-instruct",
+      "repo_id": "Qwen/Qwen2.5-7B-Instruct",
+      "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+      "startup": "optional",
+      "files": [
+        {"path": "config.json", "size": 663},
+        {"path": "generation_config.json", "size": 243},
+        {"path": "merges.txt", "size": 1671839},
+        {"path": "model-00001-of-00004.safetensors", "size": 3945441440},
+        {"path": "model-00002-of-00004.safetensors", "size": 3864726352},
+        {"path": "model-00003-of-00004.safetensors", "size": 3864726424},
+        {"path": "model-00004-of-00004.safetensors", "size": 3556377672},
+        {"path": "model.safetensors.index.json", "size": 27752},
+        {"path": "tokenizer.json", "size": 7031645},
+        {"path": "tokenizer_config.json", "size": 7305},
+        {"path": "vocab.json", "size": 2776833}
+      ]
+    },
+    {
+      "key": "lora-chinese-rap",
+      "repo_id": "ACE-Step/ACE-Step-v1-chinese-rap-LoRA",
+      "revision": "e40a223cb69a60ba8a8c46752987c152b8a5f828",
+      "startup": "lazy",
+      "files": [
+        {"path": "pytorch_lora_weights.safetensors", "size": 523816352}
+      ]
+    },
+    {
+      "key": "lora-chinese-new-year",
+      "repo_id": "ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA",
+      "revision": "cb829a12775740c830a6d49795f16913065dc492",
+      "startup": "lazy",
+      "files": [
+        {"path": "adapter_model.safetensors", "size": 88130280}
+      ]
+    }
+  ]
+}
