@@ -42,6 +42,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import json
+import math
 import os
 import shutil
 import stat
@@ -78,6 +79,8 @@ XL_SFT_LINK = "acestep-v15-xl-sft"
 # startup_duration_timeout (1 h), so the summary is printed before the
 # platform kills the container.
 BUDGET_S = 25 * 60
+# Overrides BUDGET_S (seconds): failure simulations need seconds, a slow day may need more.
+BUDGET_ENV = "AMS_BOOTSTRAP_BUDGET_S"
 BACKOFF_BASE_S = 5.0
 BACKOFF_CAP_S = 60.0
 FREE_SPACE_MARGIN_BYTES = 2 * 10**9
@@ -108,7 +111,15 @@ _DIAG_PACKAGES = (
     "gradio",
     "spaces",
 )
-_DIAG_ENV = ("HOME", "HF_HOME", "HF_HUB_CACHE", "HF_XET_CACHE", "TORCH_HOME", "HF_MODULES_CACHE")
+_DIAG_ENV = (
+    "HOME",
+    "HF_HOME",
+    "HF_HUB_CACHE",
+    "HF_XET_CACHE",
+    "TORCH_HOME",
+    "HF_MODULES_CACHE",
+    BUDGET_ENV,
+)
 
 Downloader = Callable[..., Any]
 
@@ -577,7 +588,8 @@ def _diagnostic_lines(roots: list[Path], app_dir: Path, on_spaces: bool, mounts_
     if on_spaces:
         lines.append(f"zerogpu duration_factor={_safe(_zerogpu_duration_factor)}")
     lines.append(f"ids uid={_safe(os.getuid)} gid={_safe(os.getgid)}")
-    lines.append("env " + " ".join(f"{v}={os.environ.get(v, '<unset>')}" for v in _DIAG_ENV))
+    env = " ".join(f"{v}={os.environ.get(v, '<unset>')}" for v in _DIAG_ENV)
+    lines.append(f"env {env}; hub cache: {_safe(lambda: _hub_constant('HF_HUB_CACHE'))}")
     mounts = _safe(lambda: _read_mounts(mounts_path), None)
     mounts = mounts if isinstance(mounts, list) else None
     home = _safe(lambda: os.path.expanduser("~"))
@@ -678,6 +690,7 @@ def log_diagnostics(
     on_spaces: bool | None = None,
     audio_runner: Callable[..., Any] | None = None,
     mounts_path: str = "/proc/mounts",
+    budget_s: float | None = None,
 ) -> None:
     """One block of ``[ams]`` lines on stderr describing the runtime. Never raises.
 
@@ -688,6 +701,8 @@ def log_diagnostics(
         if on_spaces is None:
             on_spaces = bool(os.getenv("SPACE_ID"))
         lines = _diagnostic_lines([Path(r) for r in roots], Path(app_dir), on_spaces, mounts_path)
+        if budget_s is not None:
+            lines.append(f"bootstrap budget {budget_s:.0f} s")
     except Exception as exc:
         lines = [f"diagnostics failed: {_describe(exc)}"]
     for line in lines:
@@ -698,6 +713,21 @@ def log_diagnostics(
 
 
 # --- startup entry point ----------------------------------------------------------
+
+
+def bootstrap_budget_s() -> float:
+    """``AMS_BOOTSTRAP_BUDGET_S`` if it is a positive finite number of seconds, else ``BUDGET_S``."""
+    raw = os.environ.get(BUDGET_ENV, "")
+    if not raw.strip():
+        return BUDGET_S
+    try:
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    if not math.isfinite(value) or value <= 0:
+        _log(f"{BUDGET_ENV}={raw!r} is not a positive number of seconds; using the default {BUDGET_S} s")
+        return BUDGET_S
+    return value
 
 
 @contextlib.contextmanager
@@ -727,20 +757,22 @@ def startup(
     lookup: Iterable[Path | str] | None = None,
     owned: Iterable[Path | str] | None = None,
     app_dir: Path | str = APP_DIR,
-    budget_s: float = BUDGET_S,
+    budget_s: float | None = None,
     clock: Callable[[], float] = time.monotonic,
     **ensure_kw: Any,
 ) -> dict[str, Path]:
     """Diagnostics, required repos (raise on failure), checkpoint links, optional repos.
 
-    One budget covers the whole call: a required repo still missing when it
-    is spent raises the summary; an optional one is skipped with a log line.
+    One budget covers the whole call (``budget_s``, else ``AMS_BOOTSTRAP_BUDGET_S``,
+    else ``BUDGET_S``): a required repo still missing when it is spent raises
+    the summary; an optional one is skipped with a log line.
     Defaults: download roots ``download_roots()``, lookup ``lookup_roots()``,
     leftovers cleaned in ``APP_ROOT``. With explicit ``roots`` (tests), lookup
     defaults to those roots and nothing is cleaned unless ``owned`` says so.
     Returns ``{manifest key: snapshot dir}`` for every repo that is available.
     """
     start = clock()
+    budget_s = bootstrap_budget_s() if budget_s is None else budget_s
     deadline = start + budget_s
     manifest = load_manifest() if manifest is None else manifest
     if roots is None:
@@ -750,7 +782,7 @@ def startup(
     roots = _unique(roots)
     lookup = roots if lookup is None else _unique(lookup)
     owned = [] if owned is None else _unique(owned)
-    log_diagnostics(lookup, app_dir=app_dir)
+    log_diagnostics(lookup, app_dir=app_dir, budget_s=budget_s)
 
     kw = dict(ensure_kw, lookup=lookup, owned=owned, clock=clock, deadline=deadline)
     resolved: dict[str, Path] = {}

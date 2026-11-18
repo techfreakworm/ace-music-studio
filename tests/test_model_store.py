@@ -1068,6 +1068,67 @@ def test_startup_budget_is_shared_by_all_repos(tmp_path, roots, ensure_kw, fake_
     assert [c["repo_id"] for c in dl.calls].count("o/xl") == 4
 
 
+@pytest.fixture
+def no_budget_env(monkeypatch):
+    monkeypatch.delenv("AMS_BOOTSTRAP_BUDGET_S", raising=False)
+
+
+def test_bootstrap_budget_defaults_to_25_minutes(no_budget_env, capsys):
+    assert ms.bootstrap_budget_s() == ms.BUDGET_S == 25 * 60
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("value", ["30", "30.5", " 45 "])
+def test_bootstrap_budget_env_override_is_honoured(monkeypatch, capsys, value):
+    monkeypatch.setenv("AMS_BOOTSTRAP_BUDGET_S", value)
+    assert ms.bootstrap_budget_s() == float(value)
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "-5", "nan", "inf", "", "1e999"])
+def test_bootstrap_budget_bad_value_falls_back_to_the_default(monkeypatch, capsys, value):
+    monkeypatch.setenv("AMS_BOOTSTRAP_BUDGET_S", value)
+    assert ms.bootstrap_budget_s() == ms.BUDGET_S
+    lines = capsys.readouterr().err.splitlines()
+    if value == "":
+        assert lines == []  # empty means unset
+    else:
+        assert len(lines) == 1 and lines[0].startswith("[ams] ") and "AMS_BOOTSTRAP_BUDGET_S" in lines[0]
+
+
+def test_startup_uses_the_budget_from_the_environment(
+    tmp_path, roots, ensure_kw, fake_time, monkeypatch, capsys
+):
+    monkeypatch.setenv("AMS_BOOTSTRAP_BUDGET_S", "30")
+    manifest = _startup_manifest()
+    dl = FakeDownloader(manifest["repos"], {"o/xl": [ConnectionError("Max retries exceeded")] * 100})
+
+    with pytest.raises(ms.ModelStoreError, match="budget"):
+        ms.startup(tmp_path / "checkpoints", manifest=manifest, roots=roots, downloader=dl, **ensure_kw)
+
+    assert fake_time.sleeps == [5, 10]  # 25 minutes would have meant many more passes
+    assert "bootstrap budget 30 s" in capsys.readouterr().err
+
+
+def test_startup_falls_back_to_the_default_budget_on_a_bad_value(
+    tmp_path, roots, ensure_kw, monkeypatch, capsys
+):
+    monkeypatch.setenv("AMS_BOOTSTRAP_BUDGET_S", "soon")
+    manifest = _startup_manifest()
+
+    ms.startup(
+        tmp_path / "checkpoints",
+        manifest=manifest,
+        roots=roots,
+        downloader=FakeDownloader(manifest["repos"]),
+        **ensure_kw,
+    )
+
+    err = capsys.readouterr().err
+    assert "AMS_BOOTSTRAP_BUDGET_S='soon'" in err
+    assert f"bootstrap budget {ms.BUDGET_S:.0f} s" in err
+
+
 def test_startup_disables_hub_progress_bars_and_restores_them(tmp_path, roots, ensure_kw):
     hf_utils = pytest.importorskip("huggingface_hub.utils")
     are_disabled = getattr(hf_utils, "are_progress_bars_disabled", None)
@@ -1145,6 +1206,17 @@ def test_diagnostics_report_versions_ids_env_and_paths(tmp_path, roots, monkeypa
         assert str(root) in text
     assert str(tmp_path) in text
     assert "writable=" in text and "free=" in text and "mode=" in text and "owner=" in text
+
+
+def test_diagnostics_print_the_effective_hub_cache_and_budget(tmp_path, roots, monkeypatch, capsys):
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    monkeypatch.setattr(hf_constants, "HF_HUB_CACHE", str(tmp_path / "effective" / "hub"), raising=False)
+    ms.log_diagnostics(roots, app_dir=tmp_path, budget_s=90)
+    lines = capsys.readouterr().err.splitlines()
+    env = next(line for line in lines if line.startswith("[ams] env "))
+    assert "HF_HUB_CACHE=<unset>" in env
+    assert f"hub cache: {tmp_path / 'effective' / 'hub'}" in env
+    assert any(line == "[ams] bootstrap budget 90 s" for line in lines)
 
 
 def test_diagnostics_never_raise_with_unreadable_path(tmp_path, monkeypatch, capsys, chmod_tree):
