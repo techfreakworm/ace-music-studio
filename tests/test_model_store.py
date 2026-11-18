@@ -1,12 +1,17 @@
 """Tests for the pinned model manifest and the model store resolver.
 
 Everything here is offline: no weights, no network, and every cache root and
-checkpoints directory lives under ``tmp_path``. The one test that downloads
-(two small files) is marked ``network`` and is deselected by default.
+checkpoints directory lives under ``tmp_path``. The tests that reach the Hub
+are marked ``network`` and also need ``AMS_NETWORK_TESTS=1``.
+
+CI runs these with an unpinned gradio, so huggingface_hub may be 1.x/2.x
+there: hub internals are only touched through getattr/raising=False, and
+no test needs requests, torch or hf_transfer.
 """
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -16,7 +21,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-import requests
 from huggingface_hub import constants as hf_constants
 
 import model_store as ms
@@ -174,13 +178,36 @@ def tree_state(path) -> dict:
     return out
 
 
+def hub_error(name: str):
+    """An instance of ``huggingface_hub.errors.<name>`` without calling its __init__.
+
+    The constructor differs between hub 0.x (requests) and 1.x/2.x (httpx,
+    response required), and only the type matters to the resolver.
+    """
+    errors = pytest.importorskip("huggingface_hub.errors")
+    cls = getattr(errors, name, None)
+    if cls is None:
+        pytest.skip(f"huggingface_hub.errors.{name} does not exist in this version")
+    err = cls.__new__(cls)
+    Exception.__init__(err, f"{name}: org/model@{REV}")
+    return err
+
+
+class HttpStatusError(Exception):
+    def __init__(self, status):
+        super().__init__(f"{status} Client Error")
+        self.response = type("Response", (), {"status_code": status})()
+
+
 class FakeDownloader:
     """Stands in for ``huggingface_hub.snapshot_download`` and records every call.
 
     ``script`` maps repo_id to a list of actions consumed one per call: an
-    exception instance is raised, ``"ok"`` writes the complete snapshot into
-    ``cache_dir``, ``"partial"`` writes all but one file. Once a repo's list is
-    exhausted the action is ``"ok"``.
+    exception instance is raised; ``"ok"`` writes the complete snapshot into
+    ``cache_dir``; ``"partial"`` writes all but the last file; ``"nothing"``
+    writes nothing (but still returns the snapshot path, as hub 0.36.2 does
+    when repo_info fails); ``("incomplete", exc)`` leaves a ``*.incomplete``
+    blob and raises ``exc``. Once a repo's list is exhausted the action is ``"ok"``.
     """
 
     def __init__(self, entries, script=None):
@@ -195,15 +222,25 @@ class FakeDownloader:
                 "revision": revision,
                 "allow_patterns": list(allow_patterns),
                 "cache_dir": Path(cache_dir),
-                "xet_disabled": hf_constants.HF_HUB_DISABLE_XET,
+                "xet_disabled": getattr(hf_constants, "HF_HUB_DISABLE_XET", None),
+                "hf_transfer": getattr(hf_constants, "HF_HUB_ENABLE_HF_TRANSFER", None),
                 "kwargs": kwargs,
             }
         )
         actions = self.script.get(repo_id, [])
         action = actions.pop(0) if actions else "ok"
+        entry = self.entries[repo_id]
+        snap = ms.snapshot_path(cache_dir, entry)
         if isinstance(action, BaseException):
             raise action
-        entry = self.entries[repo_id]
+        if isinstance(action, tuple) and action[0] == "incomplete":
+            blobs = repo_dir(cache_dir, entry) / "blobs"
+            blobs.mkdir(parents=True, exist_ok=True)
+            (blobs / "deadbeef.incomplete").write_bytes(b"half")
+            raise action[1]
+        if action == "nothing":
+            snap.mkdir(parents=True, exist_ok=True)
+            return str(snap)
         skip = (entry["files"][-1]["path"],) if action == "partial" else ()
         return str(write_snapshot(cache_dir, entry, skip=skip))
 
@@ -222,9 +259,14 @@ class FakeTime:
 
 
 @pytest.fixture(autouse=True)
-def _xet_enabled(monkeypatch):
-    """Start every test with xet allowed, as on the Space."""
-    monkeypatch.setattr(hf_constants, "HF_HUB_DISABLE_XET", False)
+def _hub_transfer_globals(monkeypatch):
+    """Start every test as on the Space: xet allowed, HF_HUB_ENABLE_HF_TRANSFER on.
+
+    raising=False: hub 1.x/2.x (CI) may not define these; the resolver only
+    toggles attributes that exist, and here they always do.
+    """
+    monkeypatch.setattr(hf_constants, "HF_HUB_DISABLE_XET", False, raising=False)
+    monkeypatch.setattr(hf_constants, "HF_HUB_ENABLE_HF_TRANSFER", True, raising=False)
 
 
 @pytest.fixture
@@ -263,21 +305,47 @@ def chmod_tree():
             pass
 
 
+def _permissions_enforced(path, mode) -> bool:
+    return not os.access(path, mode)
+
+
 @pytest.fixture
 def roots(tmp_path):
-    return [tmp_path / "hub", tmp_path / "app" / ".ams-cache" / "hub", tmp_path / "tmp" / "ams-cache" / "hub"]
+    """The two download roots: the hub cache, then the app-owned root."""
+    return [tmp_path / "hub", tmp_path / "app" / ".ams-cache" / "hub"]
 
 
-# --- R2.1: roots ---------------------------------------------------------------
+def _cache_dirs(dl):
+    return [(c["cache_dir"], c["xet_disabled"]) for c in dl.calls]
 
 
-def test_default_roots_order(monkeypatch, tmp_path):
+# --- A1: roots -------------------------------------------------------------------
+
+
+def test_download_roots_are_the_hub_cache_then_the_app_root(monkeypatch, tmp_path):
     monkeypatch.setattr(hf_constants, "HF_HUB_CACHE", str(tmp_path / "hf" / "hub"))
-    roots = ms.default_roots()
-    assert roots[0] == tmp_path / "hf" / "hub"
-    assert roots[1] == Path(ms.__file__).resolve().parent / ".ams-cache" / "hub"
-    assert roots[2].parts[-2:] == ("ams-cache", "hub")
-    assert len(roots) == 3
+    assert ms.download_roots() == [tmp_path / "hf" / "hub", ms.APP_ROOT]
+    assert ms.APP_ROOT == Path(ms.__file__).resolve().parent / ".ams-cache" / "hub"
+
+
+def test_lookup_roots_add_the_home_caches_when_the_hub_cache_is_elsewhere(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(hf_constants, "HF_HUB_CACHE", str(tmp_path / "hf" / "hub"))
+    assert ms.lookup_roots() == [
+        tmp_path / "hf" / "hub",
+        tmp_path / "home" / ".cache" / "huggingface" / "hub",
+        Path("/home/user/.cache/huggingface/hub"),
+        ms.APP_ROOT,
+    ]
+
+
+def test_lookup_roots_do_not_repeat_the_hub_cache(monkeypatch, tmp_path):
+    home_cache = tmp_path / "home" / ".cache" / "huggingface" / "hub"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(hf_constants, "HF_HUB_CACHE", str(home_cache))
+    roots = ms.lookup_roots()
+    assert roots[0] == home_cache
+    assert len(roots) == len(set(roots)) == 3
 
 
 def test_load_manifest_reads_repo_manifest():
@@ -290,7 +358,7 @@ def test_load_manifest_reads_repo_manifest():
         ms.get_repo(m, repo_id="nobody/nothing")
 
 
-# --- R2.2 / R9.2: complete snapshot check ---------------------------------------
+# --- A2 / R9.2: complete snapshot check --------------------------------------------
 
 
 def test_is_complete_for_full_snapshot(roots):
@@ -322,6 +390,16 @@ def test_is_complete_false_on_dangling_symlink(roots):
     assert not ms.is_complete(roots[0], entry)
 
 
+def test_is_complete_false_when_a_file_is_unreadable(roots, chmod_tree):
+    entry = make_entry(FILES)
+    snap = write_snapshot(roots[0], entry)
+    blob = os.path.realpath(snap / "sub" / "weights.bin")
+    chmod_tree.mode(blob, 0o000)
+    if not _permissions_enforced(blob, os.R_OK):
+        pytest.skip("permissions are not enforced for this user")
+    assert [f["path"] for f in ms.missing_files(roots[0], entry)] == ["sub/weights.bin"]
+
+
 def test_is_complete_false_when_only_another_commit_is_cached(roots):
     entry = make_entry(FILES)
     write_snapshot(roots[0], entry, revision=OTHER_REV)
@@ -340,28 +418,28 @@ def test_find_complete_treats_unreadable_root_as_incomplete(roots, chmod_tree):
     entry = make_entry(FILES)
     write_snapshot(roots[0], entry)
     chmod_tree.mode(roots[0], 0o000)
-    if os.access(roots[0], os.R_OK):  # running as root: permissions are not enforced
+    if not _permissions_enforced(roots[0], os.R_OK):
         pytest.skip("permissions are not enforced for this user")
     assert ms.find_complete(entry, roots) is None
 
 
-# --- R2.4: local lookup ---------------------------------------------------------
+# --- local lookup (GPU worker) ------------------------------------------------------
 
 
 def test_local_snapshot_finds_complete_snapshot_offline(roots, monkeypatch):
     entry = make_entry(FILES, repo_id="Qwen/Tiny")
     manifest = {"schema": 1, "repos": [entry]}
     assert ms.local_snapshot("Qwen/Tiny", manifest=manifest, roots=roots) is None
-    snap = write_snapshot(roots[2], entry)
+    snap = write_snapshot(roots[1], entry)
     assert ms.local_snapshot("Qwen/Tiny", manifest=manifest, roots=roots) == snap
 
-    # Defaults come from the repo manifest and default_roots().
+    # Defaults come from the repo manifest and lookup_roots().
     monkeypatch.setattr(ms, "load_manifest", lambda: manifest)
-    monkeypatch.setattr(ms, "default_roots", lambda: roots)
+    monkeypatch.setattr(ms, "lookup_roots", lambda: roots)
     assert ms.local_snapshot("Qwen/Tiny") == snap
 
 
-# --- R2.3 / R9.3: ensure --------------------------------------------------------
+# --- A3 / R9.3: ensure ----------------------------------------------------------------
 
 
 def test_ensure_returns_readonly_complete_snapshot_without_download_or_write(roots, chmod_tree, ensure_kw):
@@ -375,7 +453,34 @@ def test_ensure_returns_readonly_complete_snapshot_without_download_or_write(roo
 
     assert dl.calls == []
     assert tree_state(roots[0].parent) == before
-    assert not roots[1].exists() and not roots[2].exists()
+    assert not roots[1].exists()
+
+
+def test_ensure_uses_a_lookup_only_root_without_writing_to_it(tmp_path, roots, chmod_tree, ensure_kw, capsys):
+    entry = make_entry(FILES)
+    preload = tmp_path / "home-cache" / "hub"
+    snap = write_snapshot(preload, entry)
+    chmod_tree.readonly(preload)
+    dl = FakeDownloader([entry])
+
+    found = ms.ensure_repo(entry, roots, lookup=[roots[0], preload, roots[1]], downloader=dl, **ensure_kw)
+
+    assert found == snap
+    assert dl.calls == []
+    assert not roots[0].exists() and not roots[1].exists()
+    assert f"found complete in {preload}" in capsys.readouterr().err
+
+
+def test_ensure_never_downloads_into_a_lookup_only_root(tmp_path, roots, ensure_kw):
+    entry = make_entry(FILES)
+    preload = tmp_path / "home-cache" / "hub"
+    write_snapshot(preload, entry, skip=("config.json",))
+    dl = FakeDownloader([entry])
+
+    snap = ms.ensure_repo(entry, roots, lookup=[roots[0], preload, roots[1]], downloader=dl, **ensure_kw)
+
+    assert snap == ms.snapshot_path(roots[0], entry)
+    assert [c["cache_dir"] for c in dl.calls] == [roots[0]]
 
 
 def test_ensure_downloads_pinned_files_into_first_root_when_cache_is_empty(roots, ensure_kw, capsys):
@@ -392,9 +497,10 @@ def test_ensure_downloads_pinned_files_into_first_root_when_cache_is_empty(roots
     assert call["revision"] == REV
     assert call["allow_patterns"] == ["config.json", "sub/weights.bin", "sub/tokenizer.json"]
     assert call["cache_dir"] == roots[0]
-    assert call["xet_disabled"] is False
+    assert call["kwargs"] == {"max_workers": 1}
+    assert (call["xet_disabled"], call["hf_transfer"]) == (False, True)
     err = capsys.readouterr().err
-    assert f"downloaded 3 files, 0.00 GB in 0.0 s to {roots[0]}" in err
+    assert f"downloaded 3 files, 0.00 GB in 0.0 s to {roots[0]} with xet on" in err
 
 
 def test_ensure_reports_found_complete(roots, ensure_kw, capsys):
@@ -404,36 +510,17 @@ def test_ensure_reports_found_complete(roots, ensure_kw, capsys):
     assert f"found complete in {roots[1]}" in capsys.readouterr().err
 
 
-def test_ensure_moves_to_next_root_on_permission_error(roots, ensure_kw):
+@pytest.mark.parametrize("action", ["partial", "nothing"])
+def test_ensure_rechecks_files_after_every_download(roots, ensure_kw, action):
+    # hub 0.36.2 returns the snapshot folder without files when repo_info fails
+    # while a partial snapshot exists, and skips paths that match nothing.
     entry = make_entry(FILES)
-    dl = FakeDownloader([entry], {"org/model": [PermissionError(13, "Permission denied", str(roots[0]))]})
+    dl = FakeDownloader([entry], {"org/model": [action]})
 
     snap = ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
 
-    assert snap == ms.snapshot_path(roots[1], entry)
-    assert [c["cache_dir"] for c in dl.calls] == [roots[0], roots[1]]
-
-
-@pytest.mark.parametrize("code", ["EACCES", "EPERM", "EROFS", "ENOSPC", "EDQUOT"])
-def test_ensure_moves_to_next_root_on_unusable_root_errno(roots, ensure_kw, code):
-    import errno
-
-    entry = make_entry(FILES)
-    err = OSError(getattr(errno, code), os.strerror(getattr(errno, code)))
-    dl = FakeDownloader([entry], {"org/model": [err]})
-    assert ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw) == ms.snapshot_path(roots[1], entry)
-    assert [c["cache_dir"] for c in dl.calls] == [roots[0], roots[1]]
-
-
-def test_ensure_skips_root_that_fails_the_write_probe(roots, chmod_tree, ensure_kw):
-    entry = make_entry(FILES)
-    roots[0].mkdir(parents=True)
-    chmod_tree.mode(roots[0], 0o555)
-    if os.access(roots[0], os.W_OK):
-        pytest.skip("permissions are not enforced for this user")
-    dl = FakeDownloader([entry])
-    assert ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw) == ms.snapshot_path(roots[1], entry)
-    assert [c["cache_dir"] for c in dl.calls] == [roots[1]]
+    assert snap == ms.snapshot_path(roots[0], entry)
+    assert _cache_dirs(dl) == [(roots[0], False), (roots[0], True)]
 
 
 def test_ensure_retries_hf_xet_io_error_with_xet_disabled(roots, ensure_kw, fake_time, capsys):
@@ -443,75 +530,176 @@ def test_ensure_retries_hf_xet_io_error_with_xet_disabled(roots, ensure_kw, fake
     snap = ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
 
     assert snap == ms.snapshot_path(roots[0], entry)
-    assert [(c["cache_dir"], c["xet_disabled"]) for c in dl.calls] == [(roots[0], False), (roots[0], True)]
-    assert hf_constants.HF_HUB_DISABLE_XET is False  # restored
+    assert _cache_dirs(dl) == [(roots[0], False), (roots[0], True)]
     assert fake_time.sleeps == []
-    assert "xet disabled" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "OSError: " + XET_IO_ERROR in err
+    assert "with xet off" in err
 
 
-def test_ensure_restores_xet_setting_when_the_xet_off_retry_fails(roots, ensure_kw, monkeypatch):
+@pytest.mark.parametrize(
+    "error",
+    [
+        ValueError("hf_xet configuration error"),
+        RuntimeError("Data processing error: CAS service error"),
+        RuntimeError("An error occurred while downloading using `hf_transfer`."),
+        OSError(XET_IO_ERROR),
+        ConnectionError("Max retries exceeded"),
+        TimeoutError("read timed out"),
+        ImportError("cannot import name 'download_files' from 'hf_xet'"),
+    ],
+)
+def test_ensure_retry_is_type_agnostic_and_restores_hub_globals(roots, ensure_kw, error):
     entry = make_entry(FILES)
-    dl = FakeDownloader([entry], {"org/model": [OSError(XET_IO_ERROR), OSError(XET_IO_ERROR)]})
+    dl = FakeDownloader([entry], {"org/model": [error]})
 
     snap = ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
 
-    # xet on, xet off in root 1; then root 2 starts again from the platform default.
-    assert [(c["cache_dir"], c["xet_disabled"]) for c in dl.calls] == [
+    assert snap == ms.snapshot_path(roots[0], entry)
+    assert [(c["cache_dir"], c["xet_disabled"], c["hf_transfer"]) for c in dl.calls] == [
+        (roots[0], False, True),
+        (roots[0], True, False),  # xet off: plain HTTP, hf_transfer off too
+    ]
+    assert hf_constants.HF_HUB_DISABLE_XET is False
+    assert hf_constants.HF_HUB_ENABLE_HF_TRANSFER is True
+
+
+def test_ensure_restores_hub_globals_when_the_xet_off_attempt_fails(roots, ensure_kw):
+    entry = make_entry(FILES)
+    dl = FakeDownloader([entry], {"org/model": [OSError(XET_IO_ERROR), RuntimeError("still broken")]})
+
+    ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
+
+    assert _cache_dirs(dl) == [(roots[0], False), (roots[0], True), (roots[1], False)]
+    assert hf_constants.HF_HUB_DISABLE_XET is False
+    assert hf_constants.HF_HUB_ENABLE_HF_TRANSFER is True
+
+
+def test_ensure_marks_root_unusable_on_permission_error(roots, ensure_kw):
+    entry = make_entry(FILES)
+    dl = FakeDownloader([entry], {"org/model": [PermissionError(13, "Permission denied", str(roots[0]))]})
+
+    snap = ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
+
+    assert snap == ms.snapshot_path(roots[1], entry)
+    # The xet-off strategy of the unusable root is skipped.
+    assert _cache_dirs(dl) == [(roots[0], False), (roots[1], False)]
+
+
+@pytest.mark.parametrize("code", ["EACCES", "EPERM", "EROFS", "ENOSPC", "EDQUOT"])
+def test_ensure_marks_root_unusable_on_write_errno(roots, ensure_kw, code):
+    entry = make_entry(FILES)
+    num = getattr(errno, code, None)
+    if num is None:
+        pytest.skip(f"errno.{code} does not exist on this platform")
+    dl = FakeDownloader([entry], {"org/model": [OSError(num, os.strerror(num))]})
+    assert ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw) == ms.snapshot_path(roots[1], entry)
+    assert _cache_dirs(dl) == [(roots[0], False), (roots[1], False)]
+
+
+def test_ensure_skips_root_that_fails_the_write_probe(roots, chmod_tree, ensure_kw):
+    entry = make_entry(FILES)
+    roots[0].mkdir(parents=True)
+    chmod_tree.mode(roots[0], 0o555)
+    if not _permissions_enforced(roots[0], os.W_OK):
+        pytest.skip("permissions are not enforced for this user")
+    dl = FakeDownloader([entry])
+    assert ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw) == ms.snapshot_path(roots[1], entry)
+    assert [c["cache_dir"] for c in dl.calls] == [roots[1]]
+
+
+@pytest.mark.parametrize(
+    "make_error", ["RevisionNotFoundError", "RepositoryNotFoundError", "GatedRepoError", 401, 403]
+)
+def test_ensure_fails_fast_when_the_repo_or_commit_is_not_reachable(roots, ensure_kw, fake_time, make_error):
+    error = HttpStatusError(make_error) if isinstance(make_error, int) else hub_error(make_error)
+    entry = make_entry(FILES)
+    dl = FakeDownloader([entry], {"org/model": [error] * 10})
+
+    with pytest.raises(ms.ModelStoreError) as exc:
+        ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
+
+    assert len(dl.calls) == 1
+    assert fake_time.sleeps == []
+    assert "org/model@" + REV in str(exc.value)
+    assert type(error).__name__ in str(exc.value)
+
+
+def test_ensure_retries_every_strategy_after_a_backoff(roots, ensure_kw, fake_time):
+    entry = make_entry(FILES)
+    boom = ConnectionError("Max retries exceeded")
+    dl = FakeDownloader([entry], {"org/model": [boom] * 4})
+
+    snap = ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
+
+    assert snap == ms.snapshot_path(roots[0], entry)
+    assert _cache_dirs(dl) == [
         (roots[0], False),
         (roots[0], True),
         (roots[1], False),
+        (roots[1], True),
+        (roots[0], False),
     ]
-    assert snap == ms.snapshot_path(roots[1], entry)
-    assert hf_constants.HF_HUB_DISABLE_XET is False
-
-
-def test_ensure_retries_transient_errors_with_backoff_last_attempt_without_xet(roots, ensure_kw, fake_time):
-    entry = make_entry(FILES)
-    boom = requests.exceptions.ConnectionError("Max retries exceeded")
-    dl = FakeDownloader([entry], {"org/model": [boom, boom, boom]})
-
-    snap = ms.ensure_repo(entry, roots, downloader=dl, max_attempts=4, **ensure_kw)
-
-    assert snap == ms.snapshot_path(roots[0], entry)
-    assert [c["cache_dir"] for c in dl.calls] == [roots[0]] * 4
-    assert [c["xet_disabled"] for c in dl.calls] == [False, False, False, True]
-    assert fake_time.sleeps == [5, 10, 20]
-    assert hf_constants.HF_HUB_DISABLE_XET is False
-
-
-def test_ensure_backoff_is_capped(roots, ensure_kw, fake_time):
-    entry = make_entry(FILES)
-    boom = TimeoutError("read timed out")
-    dl = FakeDownloader([entry], {"org/model": [boom] * 6})
-    ms.ensure_repo(entry, roots, downloader=dl, max_attempts=7, backoff_cap_s=30, **ensure_kw)
-    assert fake_time.sleeps == [5, 10, 20, 30, 30, 30]
-
-
-def test_ensure_retries_when_download_leaves_snapshot_incomplete(roots, ensure_kw, fake_time):
-    entry = make_entry(FILES)
-    dl = FakeDownloader([entry], {"org/model": ["partial"]})
-    assert ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw) == ms.snapshot_path(roots[0], entry)
-    assert len(dl.calls) == 2
     assert fake_time.sleeps == [5]
 
 
-def test_ensure_stops_at_the_deadline(roots, ensure_kw, fake_time):
+def test_ensure_backoff_doubles_and_is_capped(roots, ensure_kw, fake_time):
     entry = make_entry(FILES)
-    boom = requests.exceptions.ConnectionError("Max retries exceeded")
-    dl = FakeDownloader([entry], {"org/model": [boom] * 50})
+    dl = FakeDownloader([entry], {"org/model": [TimeoutError("read timed out")] * (4 * 6)})
+    ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
+    assert fake_time.sleeps == [5, 10, 20, 40, 60, 60]
+    assert len(dl.calls) == 4 * 6 + 1
+
+
+def test_ensure_raises_the_summary_when_the_budget_is_spent(roots, ensure_kw, fake_time):
+    entry = make_entry(FILES)
+    dl = FakeDownloader([entry], {"org/model": [ConnectionError("Max retries exceeded")] * 100})
 
     with pytest.raises(ms.ModelStoreError) as exc:
-        ms.ensure_repo(entry, roots, downloader=dl, deadline_s=30, max_attempts=10, **ensure_kw)
+        ms.ensure_repo(entry, roots, downloader=dl, deadline=fake_time.clock() + 30, **ensure_kw)
 
-    # t=0 fail, sleep 5; t=5 fail, sleep 10; t=15 fail, next sleep (20) would pass the deadline.
-    assert len(dl.calls) == 3
+    # pass at t=0, sleep 5; pass at t=5, sleep 10; pass at t=15; sleeping 20 would pass t=30.
     assert fake_time.sleeps == [5, 10]
-    assert "deadline" in str(exc.value)
+    assert len(dl.calls) == 12
+    msg = str(exc.value)
+    assert "budget" in msg and "ConnectionError" in msg
 
 
-def test_ensure_skips_root_without_enough_free_space(roots, fake_time):
+def test_ensure_does_not_start_downloading_after_the_budget_is_spent(roots, ensure_kw, fake_time):
     entry = make_entry(FILES)
-    free = {roots[0]: 2 * 10**9, roots[1]: 10**15, roots[2]: 10**15}
+    dl = FakeDownloader([entry])
+    with pytest.raises(ms.ModelStoreError, match="budget"):
+        ms.ensure_repo(entry, roots, downloader=dl, deadline=fake_time.clock() - 1, **ensure_kw)
+    assert dl.calls == []
+
+
+def test_ensure_returns_a_complete_snapshot_even_after_the_budget_is_spent(roots, ensure_kw, fake_time):
+    entry = make_entry(FILES)
+    snap = write_snapshot(roots[1], entry)
+    dl = FakeDownloader([entry])
+    assert ms.ensure_repo(entry, roots, downloader=dl, deadline=fake_time.clock() - 1, **ensure_kw) == snap
+
+
+def test_ensure_raises_at_once_when_every_root_is_unusable(roots, ensure_kw, fake_time):
+    entry = make_entry(FILES, repo_id="ACE-Step/Some-Repo")
+    denied = PermissionError(13, "Permission denied")
+    dl = FakeDownloader([entry], {"ACE-Step/Some-Repo": [denied, denied]})
+
+    with pytest.raises(ms.ModelStoreError) as exc:
+        ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
+
+    assert len(dl.calls) == 2
+    assert fake_time.sleeps == []
+    msg = str(exc.value)
+    assert "ACE-Step/Some-Repo@" + REV in msg
+    for root in roots:
+        assert str(root) in msg
+    assert "PermissionError" in msg
+
+
+def test_ensure_skips_root_without_enough_free_space(roots, fake_time, capsys):
+    entry = make_entry(FILES)
+    free = {roots[0]: 2 * 10**9, roots[1]: 10**15}
     dl = FakeDownloader([entry])
 
     snap = ms.ensure_repo(
@@ -526,6 +714,19 @@ def test_ensure_skips_root_without_enough_free_space(roots, fake_time):
     # 82 bytes missing + 2 GB margin does not fit in exactly 2 GB.
     assert snap == ms.snapshot_path(roots[1], entry)
     assert [c["cache_dir"] for c in dl.calls] == [roots[1]]
+    assert f"skipping {roots[0]}: not enough disk" in capsys.readouterr().err
+
+
+def test_ensure_measures_free_space_on_a_root_that_does_not_exist_yet(tmp_path, fake_time):
+    entry = make_entry(FILES)
+    roots = [tmp_path / "fresh" / "cache" / "hub", tmp_path / "fresh" / "app" / "hub"]
+    assert not roots[0].parent.parent.exists()
+    dl = FakeDownloader([entry])
+
+    # The real disk check: shutil.disk_usage raises on a missing path.
+    snap = ms.ensure_repo(entry, roots, downloader=dl, sleep=fake_time.sleep, clock=fake_time.clock)
+
+    assert snap == ms.snapshot_path(roots[0], entry)
 
 
 def test_default_disk_free_uses_nearest_existing_ancestor(tmp_path):
@@ -533,51 +734,38 @@ def test_default_disk_free_uses_nearest_existing_ancestor(tmp_path):
     assert isinstance(free, int) and free > 0
 
 
-def test_ensure_raises_one_summary_when_every_root_fails(roots, fake_time):
-    entry = make_entry(FILES, repo_id="ACE-Step/Some-Repo")
-    dl = FakeDownloader(
-        [entry],
-        {
-            "ACE-Step/Some-Repo": [
-                PermissionError(13, "Permission denied", str(roots[0] / ".locks")),
-                OSError(XET_IO_ERROR),
-                OSError(XET_IO_ERROR),
-            ]
-        },
-    )
-    free = {roots[0]: 10**15, roots[1]: 10**15, roots[2]: 10**6}
+def test_failed_attempt_in_the_app_root_removes_its_incomplete_blobs(roots, ensure_kw):
+    entry = make_entry(FILES)
+    script = [PermissionError(13, "Permission denied"), ("incomplete", ConnectionError("reset by peer"))]
+    dl = FakeDownloader([entry], {"org/model": script})
 
-    with pytest.raises(ms.ModelStoreError) as exc:
-        ms.ensure_repo(
-            entry,
-            roots,
-            downloader=dl,
-            sleep=fake_time.sleep,
-            clock=fake_time.clock,
-            disk_free=lambda path: free[Path(path)],
-        )
+    snap = ms.ensure_repo(entry, roots, owned=[roots[1]], downloader=dl, **ensure_kw)
 
-    msg = str(exc.value)
-    assert "ACE-Step/Some-Repo" in msg and REV in msg
-    for root in roots:
-        assert str(root) in msg
-    assert "PermissionError" in msg
-    assert "os error 13" in msg
-    assert "not enough disk" in msg
-    assert len(msg) < 2000
-    assert len(dl.calls) == 3
+    assert snap == ms.snapshot_path(roots[1], entry)
+    assert list((repo_dir(roots[1], entry) / "blobs").glob("*.incomplete")) == []
 
 
-def test_ensure_summary_fits_the_space_log_tail_even_with_long_errors(roots, ensure_kw):
+def test_failed_attempt_in_the_hub_cache_leaves_its_files_alone(roots, ensure_kw):
+    entry = make_entry(FILES)
+    dl = FakeDownloader([entry], {"org/model": [("incomplete", ConnectionError("reset by peer"))]})
+
+    ms.ensure_repo(entry, roots, owned=[roots[1]], downloader=dl, **ensure_kw)
+
+    assert [p.name for p in (repo_dir(roots[0], entry) / "blobs").glob("*.incomplete")] == [
+        "deadbeef.incomplete"
+    ]
+
+
+def test_ensure_summary_fits_the_space_log_tail_even_with_long_errors(roots, ensure_kw, fake_time):
     entry = make_entry(FILES, repo_id="ACE-Step/Some-Repo")
     huge = OSError("I/O error: " + "x" * 5000 + " (os error 13)")
     dl = FakeDownloader([entry], {"ACE-Step/Some-Repo": [huge] * 10})
 
     with pytest.raises(ms.ModelStoreError) as exc:
-        ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
+        ms.ensure_repo(entry, roots, downloader=dl, deadline=fake_time.clock() + 1, **ensure_kw)
 
     msg = str(exc.value)
-    # app.py prefixes one short line; the Space API keeps the last 2000 characters.
+    # app.py adds one short line; the Space API keeps the last 2000 characters.
     assert len(msg) < 1900, len(msg)
     assert msg.startswith(f"could not get ACE-Step/Some-Repo@{REV}")
     for root in roots:
@@ -622,7 +810,7 @@ def test_startup_in_2026_09_22_state_needs_no_download(tmp_path, roots, chmod_tr
     xet.mkdir()
     chmod_tree.mode(xet, 0o500)
     monkeypatch.setenv("HF_XET_CACHE", str(xet))
-    monkeypatch.setattr(hf_constants, "HF_XET_CACHE", str(xet))
+    monkeypatch.setattr(hf_constants, "HF_XET_CACHE", str(xet), raising=False)
     calls = []
 
     def _downloader(*args, **kwargs):
@@ -635,7 +823,7 @@ def test_startup_in_2026_09_22_state_needs_no_download(tmp_path, roots, chmod_tr
     before = tree_state(roots[0])
     ckpt = tmp_path / "checkpoints"
 
-    resolved = ms.startup(ckpt, manifest=manifest, roots=roots)
+    resolved = ms.startup(ckpt, manifest=manifest, roots=roots, owned=[roots[1]])
 
     assert calls == []
     assert tree_state(roots[0]) == before
@@ -644,7 +832,7 @@ def test_startup_in_2026_09_22_state_needs_no_download(tmp_path, roots, chmod_tr
         assert (ckpt / name).is_symlink()
         assert os.path.samefile(ckpt / name, umbrella_snap / name)
     assert os.path.samefile(ckpt / ms.XL_SFT_LINK, resolved["ace-step-xl-sft"])
-    assert not roots[1].exists() and not roots[2].exists()
+    assert not roots[1].exists()
 
 
 # --- R9.5: upstream moved ---------------------------------------------------------
@@ -747,7 +935,7 @@ def test_link_checkpoints_leaves_real_directory_alone_with_warning(tmp_path, sna
         assert (ckpt / name).is_symlink()
 
 
-# --- R2.6 / R2.7 / R9.7: diagnostics and the startup entry point -----------------
+# --- R2.7 / A12 / R9.7: the startup entry point -------------------------------------
 
 
 def _startup_manifest():
@@ -759,7 +947,6 @@ def _startup_manifest():
             ),
             make_entry({"model.bin": 9}, repo_id="o/xl", key=ms.XL_SFT_KEY),
             make_entry({"model.bin": 9}, repo_id="o/qwen", key="qwen", startup="optional"),
-            make_entry({"lora.bin": 3}, repo_id="o/lora", key="lora", startup="lazy"),
         ],
     }
 
@@ -789,7 +976,7 @@ def test_startup_downloads_required_then_links_then_optional(tmp_path, roots, en
 
 def test_startup_raises_when_a_required_repo_fails(tmp_path, roots, ensure_kw):
     manifest = _startup_manifest()
-    denied = [PermissionError(13, "Permission denied")] * 3
+    denied = [PermissionError(13, "Permission denied")] * 2
     dl = FakeDownloader(manifest["repos"], {"o/xl": denied})
     ckpt = tmp_path / "checkpoints"
 
@@ -803,11 +990,11 @@ def test_startup_raises_when_a_required_repo_fails(tmp_path, roots, ensure_kw):
 
 def test_startup_continues_when_an_optional_repo_fails(tmp_path, roots, ensure_kw, capsys):
     manifest = _startup_manifest()
-    boom = requests.exceptions.ConnectionError("Max retries exceeded")
-    dl = FakeDownloader(manifest["repos"], {"o/qwen": [boom] * 20})
+    denied = [PermissionError(13, "Permission denied")] * 2
+    dl = FakeDownloader(manifest["repos"], {"o/qwen": denied})
     ckpt = tmp_path / "checkpoints"
 
-    resolved = ms.startup(ckpt, manifest=manifest, roots=roots, downloader=dl, max_attempts=2, **ensure_kw)
+    resolved = ms.startup(ckpt, manifest=manifest, roots=roots, downloader=dl, **ensure_kw)
 
     assert set(resolved) == {ms.UMBRELLA_KEY, ms.XL_SFT_KEY}
     _assert_links(ckpt, resolved[ms.UMBRELLA_KEY], resolved[ms.XL_SFT_KEY])
@@ -833,6 +1020,102 @@ def test_startup_continues_when_an_optional_repo_does_not_fit_on_disk(tmp_path, 
     assert "qwen" not in resolved
     assert "o/qwen" not in [c["repo_id"] for c in dl.calls]
     assert "not enough disk" in capsys.readouterr().err
+
+
+def test_startup_budget_spent_during_a_required_repo_raises_the_summary(
+    tmp_path, roots, ensure_kw, fake_time
+):
+    manifest = _startup_manifest()
+    dl = FakeDownloader(manifest["repos"], {"o/xl": [ConnectionError("Max retries exceeded")] * 100})
+
+    with pytest.raises(ms.ModelStoreError) as exc:
+        ms.startup(
+            tmp_path / "checkpoints", manifest=manifest, roots=roots, downloader=dl, budget_s=30, **ensure_kw
+        )
+
+    assert "o/xl" in str(exc.value) and "budget" in str(exc.value)
+    assert fake_time.now <= 1000 + 30
+
+
+def test_startup_budget_spent_during_an_optional_repo_skips_it(tmp_path, roots, ensure_kw, fake_time, capsys):
+    manifest = _startup_manifest()
+    dl = FakeDownloader(manifest["repos"], {"o/qwen": [ConnectionError("Max retries exceeded")] * 100})
+
+    resolved = ms.startup(
+        tmp_path / "checkpoints", manifest=manifest, roots=roots, downloader=dl, budget_s=30, **ensure_kw
+    )
+
+    assert set(resolved) == {ms.UMBRELLA_KEY, ms.XL_SFT_KEY}
+    err = capsys.readouterr().err
+    assert "o/qwen" in err and "budget" in err
+    assert fake_time.now <= 1000 + 30
+
+
+def test_startup_budget_is_shared_by_all_repos(tmp_path, roots, ensure_kw, fake_time):
+    manifest = _startup_manifest()
+    # The umbrella burns the budget in backoffs before it succeeds; nothing is left for the XL repo.
+    boom = ConnectionError("Max retries exceeded")
+    dl = FakeDownloader(manifest["repos"], {"o/umbrella": [boom] * 8, "o/xl": [boom] * 100})
+
+    with pytest.raises(ms.ModelStoreError, match="o/xl"):
+        ms.startup(
+            tmp_path / "checkpoints", manifest=manifest, roots=roots, downloader=dl, budget_s=20, **ensure_kw
+        )
+
+    # Umbrella: failed passes at t=0 and t=5, success at t=15. XL: one failed pass at t=15; a 5 s
+    # backoff would end exactly at the deadline, so no second pass and no pointless sleep.
+    assert fake_time.sleeps == [5, 10]
+    assert [c["repo_id"] for c in dl.calls].count("o/xl") == 4
+
+
+def test_startup_disables_hub_progress_bars_and_restores_them(tmp_path, roots, ensure_kw):
+    hf_utils = pytest.importorskip("huggingface_hub.utils")
+    are_disabled = getattr(hf_utils, "are_progress_bars_disabled", None)
+    if are_disabled is None or not hasattr(hf_utils, "enable_progress_bars"):
+        pytest.skip("this huggingface_hub has no progress-bar switch")
+    hf_utils.enable_progress_bars()
+    if are_disabled():
+        pytest.skip("progress bars are disabled by the environment")
+    manifest = _startup_manifest()
+    seen = []
+
+    class Recorder(FakeDownloader):
+        def __call__(self, repo_id, **kwargs):
+            seen.append(are_disabled())
+            return super().__call__(repo_id, **kwargs)
+
+    ms.startup(
+        tmp_path / "checkpoints",
+        manifest=manifest,
+        roots=roots,
+        downloader=Recorder(manifest["repos"]),
+        **ensure_kw,
+    )
+
+    assert seen == [True, True, True]
+    assert are_disabled() is False
+
+
+def test_startup_keeps_progress_bars_disabled_if_they_were(tmp_path, roots, ensure_kw):
+    hf_utils = pytest.importorskip("huggingface_hub.utils")
+    if not all(hasattr(hf_utils, n) for n in ("are_progress_bars_disabled", "disable_progress_bars")):
+        pytest.skip("this huggingface_hub has no progress-bar switch")
+    hf_utils.disable_progress_bars()
+    try:
+        manifest = _startup_manifest()
+        ms.startup(
+            tmp_path / "checkpoints",
+            manifest=manifest,
+            roots=roots,
+            downloader=FakeDownloader(manifest["repos"]),
+            **ensure_kw,
+        )
+        assert hf_utils.are_progress_bars_disabled() is True
+    finally:
+        hf_utils.enable_progress_bars()
+
+
+# --- R2.6: diagnostics ----------------------------------------------------------------
 
 
 def test_diagnostics_report_versions_ids_env_and_paths(tmp_path, roots, monkeypatch, capsys):
@@ -868,8 +1151,12 @@ def test_diagnostics_never_raise_with_unreadable_path(tmp_path, monkeypatch, cap
     home = tmp_path / "home"
     (home / ".cache" / "huggingface" / "hub").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(hf_constants, "HF_HUB_CACHE", str(home / ".cache" / "huggingface" / "hub"))
-    monkeypatch.setattr(hf_constants, "HF_XET_CACHE", str(home / ".cache" / "huggingface" / "xet"))
+    monkeypatch.setattr(
+        hf_constants, "HF_HUB_CACHE", str(home / ".cache" / "huggingface" / "hub"), raising=False
+    )
+    monkeypatch.setattr(
+        hf_constants, "HF_XET_CACHE", str(home / ".cache" / "huggingface" / "xet"), raising=False
+    )
     chmod_tree.mode(home / ".cache", 0o000)
     roots = [home / ".cache" / "huggingface" / "hub", tmp_path / "app", tmp_path / "tmp"]
 
@@ -944,7 +1231,7 @@ def test_network_download_falls_back_to_plain_http_when_xet_cache_is_unwritable(
 
     assert proc.returncode == 0, proc.stderr[-3000:]
     assert "os error 13" in proc.stderr, proc.stderr[-3000:]
-    assert "xet disabled" in proc.stderr, proc.stderr[-3000:]
+    assert "with xet off" in proc.stderr, proc.stderr[-3000:]
     snap = root / "models--ACE-Step--Ace-Step1.5" / "snapshots" / "19671f406d603126926c1b7e2adc169acbcade22"
     assert os.stat(snap / "acestep-v15-turbo" / "silence_latent.pt").st_size == 3841215
     assert os.stat(snap / "vae" / "config.json").st_size == 425

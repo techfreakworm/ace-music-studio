@@ -11,25 +11,30 @@ startup must not depend on it.
 What it does instead:
 
 * ``model_manifest.json`` pins every repo to a commit and lists exactly the
-  files the app reads, with their sizes. A snapshot is *complete* when
-  ``snapshots/<pinned commit>/<path>`` exists for every listed file and
-  ``os.stat`` (which follows the cache's symlinks) reports the listed size.
+  files the app reads, with their sizes. A snapshot is *complete* when every
+  ``snapshots/<pinned commit>/<path>`` exists, ``os.stat`` (which follows the
+  cache's symlinks) reports the listed size, and the file is readable.
   Checking this is offline and read-only.
-* Three cache roots are searched in order: the default hub cache (where a
-  preload lands), ``<app>/.ams-cache/hub`` and ``<tempdir>/ams-cache/hub``.
-  The first complete snapshot wins, with no network call and no write.
-* Otherwise the listed files are downloaded at the pinned commit into the
-  first root that works. Permission, read-only and out-of-space errors move
-  on to the next root; an hf_xet I/O error is retried once with xet switched
-  off (plain HTTP); anything else is retried with backoff, the last attempt
-  without xet, within a per-repo deadline.
+* Lookup searches the hub cache, the other places a platform preload may sit
+  (``~/.cache/huggingface/hub``, ``/home/user/.cache/huggingface/hub``) and
+  ``<app>/.ams-cache/hub``. The first complete snapshot wins, with no network
+  call and no write.
+* Otherwise the listed files are downloaded at the pinned commit through an
+  ordered list of strategies: (hub cache, xet on), (hub cache, xet off),
+  (app root, xet on), (app root, xet off). The exception type cannot tell a
+  broken root from a network blip (hub 0.36.2 makes every request error an
+  OSError; hf_xet also raises RuntimeError and ValueError), so any failure
+  just moves to the next strategy; only permission/read-only/out-of-space
+  errors retire a root, and only "repo, commit or access not found" stops at
+  once. A full pass without success is followed by a capped backoff and
+  another pass, until one overall startup budget is spent.
 * ``startup()`` is what ``app.py`` runs at import on Spaces: diagnostics, the
   ``required`` repos (fatal on failure), the checkpoint links the fork's
-  resolver needs, then the ``optional`` repos (never fatal). ``lazy`` repos
-  are fetched on first use through ``ensure_repo``.
+  resolver needs, then the ``optional`` repos (never fatal).
 
-Every function takes the cache roots as a parameter so tests can use
-temporary directories.
+Every function takes the cache roots as parameters so tests can use
+temporary directories. Hub internals are reached through getattr so the
+module also imports with huggingface_hub 1.x/2.x (CI).
 """
 
 from __future__ import annotations
@@ -49,10 +54,14 @@ from typing import Any
 
 APP_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = APP_DIR / "model_manifest.json"
+# The app-owned download root: the only place where leftovers are cleaned up.
+APP_ROOT = APP_DIR / ".ams-cache" / "hub"
+# Where a platform preload may sit when HF_HUB_CACHE points elsewhere
+# (preload_from_hub does not follow HF_HOME). Searched, never written.
+_EXTRA_LOOKUP = ("~/.cache/huggingface/hub", "/home/user/.cache/huggingface/hub")
 
 REQUIRED = "required"
 OPTIONAL = "optional"
-LAZY = "lazy"
 
 # Manifest keys of the two repos the fork's checkpoint resolver needs.
 UMBRELLA_KEY = "ace-step"
@@ -64,13 +73,15 @@ XL_SFT_KEY = "ace-step-xl-sft"
 UMBRELLA_LINKS = ("vae", "Qwen3-Embedding-0.6B", "acestep-5Hz-lm-1.7B", "acestep-v15-turbo")
 XL_SFT_LINK = "acestep-v15-xl-sft"
 
-DEADLINE_S = 12 * 60
-MAX_ATTEMPTS = 4
+# One budget for the whole bootstrap, well inside the README's
+# startup_duration_timeout (1 h), so the summary is printed before the
+# platform kills the container.
+BUDGET_S = 25 * 60
 BACKOFF_BASE_S = 5.0
 BACKOFF_CAP_S = 60.0
 FREE_SPACE_MARGIN_BYTES = 2 * 10**9
 
-# OSError numbers that mean "this cache root cannot be used", not "try again".
+# OSError numbers that mean "this cache root cannot be written".
 _ROOT_ERRNOS = {
     code
     for code in (
@@ -82,6 +93,9 @@ _ROOT_ERRNOS = {
     )
     if code is not None
 }
+# Errors that no retry can fix: stop at once.
+_FAIL_FAST_ERRORS = ("RepositoryNotFoundError", "RevisionNotFoundError", "GatedRepoError")
+_FAIL_FAST_STATUS = {401, 403}
 
 _DIAG_PACKAGES = (
     "torch",
@@ -100,10 +114,6 @@ Downloader = Callable[..., Any]
 
 class ModelStoreError(RuntimeError):
     """A repo could not be found complete or downloaded into any cache root."""
-
-
-class IncompleteDownloadError(RuntimeError):
-    """The downloader returned, but the snapshot is still not complete."""
 
 
 def _log(message: str) -> None:
@@ -128,6 +138,15 @@ def _label(entry: dict) -> str:
     return f"{entry['repo_id']}@{entry['revision'][:12]}"
 
 
+def _unique(paths: Iterable[Path | str]) -> list[Path]:
+    out: list[Path] = []
+    for p in paths:
+        path = Path(os.path.abspath(os.path.expanduser(str(p))))
+        if path not in out:
+            out.append(path)
+    return out
+
+
 # --- manifest -------------------------------------------------------------------
 
 
@@ -147,38 +166,43 @@ def get_repo(manifest: dict, *, key: str | None = None, repo_id: str | None = No
 # --- roots and completeness -----------------------------------------------------
 
 
-def default_roots() -> list[Path]:
-    """Cache roots in search order: hub cache, ``<app>/.ams-cache/hub``, ``<tmp>/ams-cache/hub``."""
+def _hub_cache() -> Path:
     from huggingface_hub import constants
 
-    roots: list[Path] = []
-    for root in (
-        Path(constants.HF_HUB_CACHE),
-        APP_DIR / ".ams-cache" / "hub",
-        Path(tempfile.gettempdir()) / "ams-cache" / "hub",
-    ):
-        if root not in roots:
-            roots.append(root)
-    return roots
+    return Path(constants.HF_HUB_CACHE)
+
+
+def download_roots() -> list[Path]:
+    """Roots that may be written, in order: the hub cache, then ``<app>/.ams-cache/hub``."""
+    return _unique([_hub_cache(), APP_ROOT])
+
+
+def lookup_roots() -> list[Path]:
+    """Roots searched for a complete snapshot: the download roots plus preload locations."""
+    return _unique([_hub_cache(), *_EXTRA_LOOKUP, APP_ROOT])
 
 
 def snapshot_path(root: Path | str, entry: dict) -> Path:
     """``<root>/models--<org>--<name>/snapshots/<pinned revision>``."""
-    folder = "models--" + entry["repo_id"].replace("/", "--")
-    return Path(root) / folder / "snapshots" / entry["revision"]
+    return _repo_folder(root, entry) / "snapshots" / entry["revision"]
+
+
+def _repo_folder(root: Path | str, entry: dict) -> Path:
+    return Path(root) / ("models--" + entry["repo_id"].replace("/", "--"))
 
 
 def missing_files(root: Path | str, entry: dict) -> list[dict]:
-    """Manifest files absent from this root's pinned snapshot or of the wrong size."""
+    """Manifest files absent from this root's pinned snapshot, of the wrong size, or unreadable."""
     snap = snapshot_path(root, entry)
     missing = []
     for f in entry["files"]:
+        path = snap / f["path"]
         try:
-            st = os.stat(snap / f["path"])  # follows the cache's symlinks into blobs/
-        except OSError:  # missing, dangling, or unreadable
-            missing.append(f)
-            continue
-        if not stat.S_ISREG(st.st_mode) or st.st_size != f["size"]:
+            st = os.stat(path)  # follows the cache's symlinks into blobs/
+            ok = stat.S_ISREG(st.st_mode) and st.st_size == f["size"] and os.access(path, os.R_OK)
+        except OSError:  # missing, dangling, or unreadable directory
+            ok = False
+        if not ok:
             missing.append(f)
     return missing
 
@@ -187,12 +211,17 @@ def is_complete(root: Path | str, entry: dict) -> bool:
     return not missing_files(root, entry)
 
 
-def find_complete(entry: dict, roots: Iterable[Path | str]) -> Path | None:
-    """First root's complete pinned snapshot, or ``None``. Offline and read-only."""
+def _complete_root(entry: dict, roots: Iterable[Path | str]) -> Path | None:
     for root in roots:
         if is_complete(root, entry):
-            return snapshot_path(root, entry)
+            return Path(root)
     return None
+
+
+def find_complete(entry: dict, roots: Iterable[Path | str]) -> Path | None:
+    """First root's complete pinned snapshot, or ``None``. Offline and read-only."""
+    root = _complete_root(entry, roots)
+    return None if root is None else snapshot_path(root, entry)
 
 
 def local_snapshot(
@@ -201,10 +230,10 @@ def local_snapshot(
     """Complete local snapshot of a manifest repo, or ``None``. Never touches the network.
 
     For code that runs inside a GPU worker, where a Hub call would spend GPU
-    time (and may not be allowed at all).
+    time and a download would not fit in the call anyway.
     """
     manifest = load_manifest() if manifest is None else manifest
-    roots = default_roots() if roots is None else roots
+    roots = lookup_roots() if roots is None else roots
     return find_complete(get_repo(manifest, repo_id=repo_id), roots)
 
 
@@ -212,7 +241,11 @@ def local_snapshot(
 
 
 def _disk_free(path: Path | str) -> int | None:
-    """Free bytes on the filesystem that holds ``path`` (or its nearest existing parent)."""
+    """Free bytes on the filesystem that holds ``path``, measured on its nearest existing ancestor.
+
+    ``shutil.disk_usage`` raises on a path that does not exist yet, which is
+    every fallback root on a fresh container.
+    """
     p = Path(path)
     while not os.path.exists(p) and p != p.parent:
         p = p.parent
@@ -229,179 +262,185 @@ def _probe_writable(root: Path) -> None:
     os.unlink(name)
 
 
-def _classify(exc: BaseException) -> str:
-    """``"root"`` (root unusable), ``"xet"`` (hf_xet I/O error) or ``"transient"``."""
-    if isinstance(exc, PermissionError):
-        return "root"
-    if isinstance(exc, OSError) and exc.errno in _ROOT_ERRNOS:
-        return "root"
-    if isinstance(exc, OSError) and exc.errno is None:
-        # hf_xet maps Rust's std::io::Error to a bare OSError whose message
-        # ends in "(os error N)", with no errno attribute.
-        text = str(exc)
-        if "(os error" in text or text.startswith("I/O error"):
-            return "xet"
-    return "transient"
+def _root_unusable(exc: BaseException) -> bool:
+    return isinstance(exc, PermissionError) or (isinstance(exc, OSError) and exc.errno in _ROOT_ERRNOS)
+
+
+def _fail_fast(exc: BaseException) -> bool:
+    try:
+        from huggingface_hub import errors as hub_errors
+    except Exception:
+        hub_errors = None
+    classes = tuple(
+        c for c in (getattr(hub_errors, n, None) for n in _FAIL_FAST_ERRORS) if isinstance(c, type)
+    )
+    if classes and isinstance(exc, classes):
+        return True
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status in _FAIL_FAST_STATUS
 
 
 @contextlib.contextmanager
-def _xet_disabled(disabled: bool) -> Iterator[None]:
-    """Switch hf_xet off for the duration (``is_xet_available`` reads the constant per call)."""
-    if not disabled:
+def _transfer(xet_off: bool) -> Iterator[None]:
+    """For one attempt with xet off: plain HTTP, no hf_xet and no hf_transfer.
+
+    Both are module attributes read per call (the env vars are frozen at
+    import); they are restored afterwards. Only the import-time bootstrap,
+    which is single-threaded, goes through here.
+    """
+    if not xet_off:
         yield
         return
-    from huggingface_hub import constants
-
-    previous = constants.HF_HUB_DISABLE_XET
-    constants.HF_HUB_DISABLE_XET = True
+    try:
+        from huggingface_hub import constants
+    except Exception:
+        constants = None
+    saved = {}
+    for name, value in (("HF_HUB_DISABLE_XET", True), ("HF_HUB_ENABLE_HF_TRANSFER", False)):
+        if constants is not None and hasattr(constants, name):
+            saved[name] = getattr(constants, name)
+            setattr(constants, name, value)
     try:
         yield
     finally:
-        constants.HF_HUB_DISABLE_XET = previous
+        for name, value in saved.items():
+            setattr(constants, name, value)
 
 
-def _attempt(entry: dict, root: Path, downloader: Downloader, xet_off: bool) -> Path:
-    with _xet_disabled(xet_off):
-        downloader(
-            entry["repo_id"],
-            revision=entry["revision"],
-            allow_patterns=[f["path"] for f in entry["files"]],
-            cache_dir=str(root),
-        )
-    still_missing = missing_files(root, entry)
-    if still_missing:
-        raise IncompleteDownloadError(
-            f"{len(still_missing)} file(s) missing or of the wrong size after download, "
-            f"e.g. {still_missing[0]['path']}"
-        )
-    return snapshot_path(root, entry)
-
-
-def _download_into(
-    entry: dict,
-    root: Path,
-    *,
-    downloader: Downloader,
-    sleep: Callable[[float], None],
-    clock: Callable[[], float],
-    deadline: float,
-    max_attempts: int,
-    backoff_cap_s: float,
-) -> tuple[Path | None, str, bool]:
-    """Try one root. Returns ``(snapshot, last_error, deadline_reached)``."""
-    label = _label(entry)
-    attempt = 0
-    while True:
-        attempt += 1
-        xet_off = attempt >= max_attempts
+def _remove_incomplete_blobs(root: Path, entry: dict) -> None:
+    for leftover in (_repo_folder(root, entry) / "blobs").glob("*.incomplete"):
         try:
-            return _attempt(entry, root, downloader, xet_off), "", False
-        except Exception as exc:
-            kind = _classify(exc)
-            last = _describe(exc)
-            _log(f"{label}: attempt {attempt} in {root}{' (xet off)' if xet_off else ''} failed: {last}")
-            if kind == "root":
-                return None, last, False
-            if kind == "xet" and not xet_off:
-                _log(f"{label}: hf_xet error, retrying once in {root} with xet disabled")
-                try:
-                    return _attempt(entry, root, downloader, True), "", False
-                except Exception as retry_exc:
-                    last = f"{_describe(retry_exc)} (retried with xet disabled after: {last})"
-                    _log(f"{label}: retry with xet disabled failed: {_describe(retry_exc)}")
-                    return None, last, False
-            if attempt >= max_attempts:
-                return None, last, False
-            delay = min(backoff_cap_s, BACKOFF_BASE_S * 2 ** (attempt - 1))
-            if clock() + delay > deadline:
-                return None, f"{last} (stopped: per-repo deadline reached)", True
-            _log(f"{label}: retrying in {delay:.0f} s")
-            sleep(delay)
+            leftover.unlink()
+            _log(f"removed leftover {leftover}")
+        except OSError:
+            pass
+
+
+def _summary(entry: dict, reason: str, roots: list[Path], notes: dict[Path, str]) -> ModelStoreError:
+    total = sum(f["size"] for f in entry["files"])
+    lines = [
+        f"could not get {entry['repo_id']}@{entry['revision']} "
+        f"({len(entry['files'])} files, {_gb(total)} GB): {_shorten(reason, 300)}"
+    ]
+    # Short enough that the whole summary survives in the 2000-character log
+    # tail the Space API keeps.
+    lines += [f"  {root}: {_shorten(notes.get(root, 'not tried'), 400)}" for root in roots]
+    return ModelStoreError("\n".join(lines))
 
 
 def ensure_repo(
     entry: dict,
     roots: Iterable[Path | str],
     *,
+    lookup: Iterable[Path | str] | None = None,
+    owned: Iterable[Path | str] = (),
     downloader: Downloader | None = None,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    deadline: float | None = None,
     disk_free: Callable[[Path], int | None] | None = None,
-    deadline_s: float = DEADLINE_S,
-    max_attempts: int = MAX_ATTEMPTS,
-    backoff_cap_s: float = BACKOFF_CAP_S,
     margin_bytes: int = FREE_SPACE_MARGIN_BYTES,
+    backoff_cap_s: float = BACKOFF_CAP_S,
 ) -> Path:
     """Return a complete pinned snapshot of ``entry``, downloading it if no root has one.
 
-    Raises ``ModelStoreError`` with a short per-root summary when every root failed.
+    ``roots`` are the download roots in order; ``lookup`` (default: ``roots``)
+    is searched first for a complete snapshot and never written unless it is
+    also a download root; leftovers of failed attempts are removed only in
+    ``owned`` roots. ``deadline`` is a ``clock()`` value (default: now plus
+    ``BUDGET_S``). Raises ``ModelStoreError`` with a short per-root summary.
     """
-    roots = [Path(r) for r in roots]
+    roots = _unique(roots)
+    lookup = roots if lookup is None else _unique(lookup)
+    owned = set(_unique(owned))
     label = _label(entry)
-    for root in roots:
-        if is_complete(root, entry):
-            _log(f"{label}: found complete in {root}")
-            return snapshot_path(root, entry)
+
+    found = _complete_root(entry, lookup)
+    if found is not None:
+        _log(f"{label}: found complete in {found}")
+        return snapshot_path(found, entry)
 
     if downloader is None:
         from huggingface_hub import snapshot_download as downloader
     if disk_free is None:
         disk_free = _disk_free
-
     start = clock()
-    deadline = start + deadline_s
-    failures: list[tuple[Path, str]] = []
-    for root in roots:
-        if clock() >= deadline:
-            failures.append((root, "not tried: per-repo deadline reached"))
-            break
-        missing = missing_files(root, entry)
-        need = sum(f["size"] for f in missing)
-        free = disk_free(root)
-        if free is not None and free < need + margin_bytes:
-            reason = f"not enough disk: {_gb(need)} GB missing + {_gb(margin_bytes)} GB margin, {_gb(free)} GB free"
-            _log(f"{label}: skipping {root}: {reason}")
-            failures.append((root, reason))
-            continue
-        try:
-            _probe_writable(root)
-        except OSError as exc:
-            reason = f"not writable: {_describe(exc)}"
-            _log(f"{label}: skipping {root}: {reason}")
-            failures.append((root, reason))
-            continue
-        _log(f"{label}: downloading {len(missing)} files ({_gb(need)} GB) to {root}")
-        snap, last, out_of_time = _download_into(
-            entry,
-            root,
-            downloader=downloader,
-            sleep=sleep,
-            clock=clock,
-            deadline=deadline,
-            max_attempts=max_attempts,
-            backoff_cap_s=backoff_cap_s,
-        )
-        if snap is not None:
-            _log(
-                f"{label}: downloaded {len(missing)} files, {_gb(need)} GB "
-                f"in {clock() - start:.1f} s to {root}"
-            )
-            return snap
-        failures.append((root, last))
-        if out_of_time:
-            break
+    deadline = start + BUDGET_S if deadline is None else deadline
+    notes: dict[Path, str] = {}
+    unusable: set[Path] = set()
+    backoff = BACKOFF_BASE_S
+    _log(f"{label}: not complete in any cache root, downloading")
 
-    total = sum(f["size"] for f in entry["files"])
-    lines = [
-        f"could not get {entry['repo_id']}@{entry['revision']} "
-        f"({len(entry['files'])} files, {_gb(total)} GB) into any cache root:"
-    ]
-    # Short enough that the whole summary survives in the 2000-character log
-    # tail the Space API keeps.
-    lines += [f"  {root}: {_shorten(reason, 400)}" for root, reason in failures]
-    if not failures:
-        lines.append("  (no cache roots given)")
-    raise ModelStoreError("\n".join(lines))
+    while True:
+        for root in roots:
+            if root in unusable:
+                continue
+            missing = missing_files(root, entry)
+            need = sum(f["size"] for f in missing)
+            free = disk_free(root)
+            if free is not None and free < need + margin_bytes:
+                notes[root] = (
+                    f"not enough disk: {_gb(need)} GB missing + {_gb(margin_bytes)} GB margin, "
+                    f"{_gb(free)} GB free"
+                )
+                unusable.add(root)
+                _log(f"{label}: skipping {root}: {notes[root]}")
+                continue
+            try:
+                _probe_writable(root)
+            except OSError as exc:
+                notes[root] = f"not writable: {_describe(exc)}"
+                unusable.add(root)
+                _log(f"{label}: skipping {root}: {notes[root]}")
+                continue
+            for xet_off in (False, True):
+                if clock() >= deadline:
+                    raise _summary(entry, "startup budget spent", roots, notes)
+                mode = "xet off" if xet_off else "xet on"
+                try:
+                    with _transfer(xet_off):
+                        downloader(
+                            entry["repo_id"],
+                            revision=entry["revision"],
+                            allow_patterns=[f["path"] for f in entry["files"]],
+                            cache_dir=str(root),
+                            max_workers=1,
+                        )
+                except Exception as exc:
+                    notes[root] = f"{mode}: {_describe(exc)}"
+                    _log(f"{label}: {root} with {mode} failed: {_describe(exc)}")
+                    if root in owned:
+                        _remove_incomplete_blobs(root, entry)
+                    if _fail_fast(exc):
+                        raise _summary(entry, f"not retryable: {_describe(exc)}", roots, notes) from None
+                    if _root_unusable(exc):
+                        unusable.add(root)
+                        break
+                    continue
+                # Never trust the return value: hub 0.36.2 returns the snapshot
+                # folder without files when repo_info fails, and skips paths
+                # that match nothing upstream.
+                still_missing = missing_files(root, entry)
+                if not still_missing:
+                    _log(
+                        f"{label}: downloaded {len(missing)} files, {_gb(need)} GB "
+                        f"in {clock() - start:.1f} s to {root} with {mode}"
+                    )
+                    return snapshot_path(root, entry)
+                notes[root] = (
+                    f"{mode}: download returned but {len(still_missing)} file(s) are missing or "
+                    f"of the wrong size, e.g. {still_missing[0]['path']}"
+                )
+                _log(f"{label}: {root} with {notes[root]}")
+                if root in owned:
+                    _remove_incomplete_blobs(root, entry)
+        if all(root in unusable for root in roots):
+            raise _summary(entry, "no cache root is usable", roots, notes)
+        if clock() + backoff >= deadline:
+            raise _summary(entry, "startup budget spent", roots, notes)
+        _log(f"{label}: every strategy failed, retrying in {backoff:.0f} s")
+        sleep(backoff)
+        backoff = min(backoff_cap_s, backoff * 2)
 
 
 # --- checkpoint links -----------------------------------------------------------
@@ -413,8 +452,8 @@ def link_checkpoints(
     """Point ``vendor/ace-step/checkpoints/<component>`` at the resolved snapshots.
 
     A correct link is left as is; a dangling link or one that points elsewhere
-    is replaced; a real file or directory in the way is never deleted (it is
-    left alone with a warning).
+    is replaced atomically (never followed); a real file or directory in the
+    way is never deleted (it is left alone with a warning).
     """
     checkpoints_dir = Path(checkpoints_dir)
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
@@ -422,14 +461,17 @@ def link_checkpoints(
     wanted[XL_SFT_LINK] = Path(xl_snapshot)
     for name, target in wanted.items():
         link = checkpoints_dir / name
-        if link.is_symlink():
+        if os.path.islink(link):
             try:
                 if os.path.samefile(link, target):
                     continue
             except OSError:  # dangling link or missing target
                 pass
-            link.unlink()
-            link.symlink_to(target)
+            tmp = checkpoints_dir / f".{name}.ams-tmp-link"
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(tmp)
+            os.symlink(target, tmp)
+            os.replace(tmp, link)  # replaces the link itself, not what it points to
             _log(f"replaced link {link} -> {target}")
         elif link.exists():
             _log(f"WARNING: {link} is a real file or directory, not a link; left alone (wanted -> {target})")
@@ -473,9 +515,13 @@ def _path_line(label: str, path: Path | str) -> str:
     )
 
 
-def _diagnostic_lines(roots: list[Path], app_dir: Path) -> list[str]:
+def _hub_constant(name: str) -> Any:
     from huggingface_hub import constants
 
+    return getattr(constants, name, "<undefined>")
+
+
+def _diagnostic_lines(roots: list[Path], app_dir: Path) -> list[str]:
     lines = [f"python {sys.version.split()[0]} ({sys.executable})"]
     versions = " ".join(f"{p}={_safe(lambda p=p: _package_version(p))}" for p in _DIAG_PACKAGES)
     lines.append(f"versions {versions}")
@@ -485,8 +531,8 @@ def _diagnostic_lines(roots: list[Path], app_dir: Path) -> list[str]:
     probes: list[tuple[str, Any]] = [
         ("~/.cache", os.path.join(home, ".cache")),
         ("~/.cache/huggingface", os.path.join(home, ".cache", "huggingface")),
-        ("hub-cache", _safe(lambda: constants.HF_HUB_CACHE)),
-        ("xet-cache", _safe(lambda: constants.HF_XET_CACHE)),
+        ("hub-cache", _safe(lambda: _hub_constant("HF_HUB_CACHE"))),
+        ("xet-cache", _safe(lambda: _hub_constant("HF_XET_CACHE"))),
     ]
     probes += [(f"root{i}", root) for i, root in enumerate(roots, start=1)]
     probes += [("tempdir", _safe(tempfile.gettempdir)), ("app-dir", app_dir)]
@@ -509,34 +555,73 @@ def log_diagnostics(roots: Iterable[Path | str], *, app_dir: Path | str = APP_DI
 # --- startup entry point ----------------------------------------------------------
 
 
+@contextlib.contextmanager
+def _progress_bars_off() -> Iterator[None]:
+    """Hub progress bars would fill the 2000-character log tail the Space API keeps."""
+    try:
+        from huggingface_hub import utils as hub_utils
+
+        were_disabled = hub_utils.are_progress_bars_disabled()
+        hub_utils.disable_progress_bars()
+    except Exception:
+        yield
+        return
+    try:
+        yield
+    finally:
+        if not were_disabled:
+            with contextlib.suppress(Exception):
+                hub_utils.enable_progress_bars()
+
+
 def startup(
     checkpoints_dir: Path | str,
     *,
     manifest: dict | None = None,
     roots: Iterable[Path | str] | None = None,
+    lookup: Iterable[Path | str] | None = None,
+    owned: Iterable[Path | str] | None = None,
     app_dir: Path | str = APP_DIR,
+    budget_s: float = BUDGET_S,
+    clock: Callable[[], float] = time.monotonic,
     **ensure_kw: Any,
 ) -> dict[str, Path]:
     """Diagnostics, required repos (raise on failure), checkpoint links, optional repos.
 
+    One budget covers the whole call: a required repo still missing when it
+    is spent raises the summary; an optional one is skipped with a log line.
+    Defaults: download roots ``download_roots()``, lookup ``lookup_roots()``,
+    leftovers cleaned in ``APP_ROOT``. With explicit ``roots`` (tests), lookup
+    defaults to those roots and nothing is cleaned unless ``owned`` says so.
     Returns ``{manifest key: snapshot dir}`` for every repo that is available.
     """
+    start = clock()
+    deadline = start + budget_s
     manifest = load_manifest() if manifest is None else manifest
-    roots = default_roots() if roots is None else [Path(r) for r in roots]
-    log_diagnostics(roots, app_dir=app_dir)
+    if roots is None:
+        roots = download_roots()
+        lookup = lookup_roots() if lookup is None else lookup
+        owned = [APP_ROOT] if owned is None else owned
+    roots = _unique(roots)
+    lookup = roots if lookup is None else _unique(lookup)
+    owned = [] if owned is None else _unique(owned)
+    log_diagnostics(lookup, app_dir=app_dir)
 
+    kw = dict(ensure_kw, lookup=lookup, owned=owned, clock=clock, deadline=deadline)
     resolved: dict[str, Path] = {}
-    for entry in manifest["repos"]:
-        if entry["startup"] == REQUIRED:
-            resolved[entry["key"]] = ensure_repo(entry, roots, **ensure_kw)
+    with _progress_bars_off():
+        for entry in manifest["repos"]:
+            if entry["startup"] == REQUIRED:
+                resolved[entry["key"]] = ensure_repo(entry, roots, **kw)
 
-    link_checkpoints(checkpoints_dir, resolved[UMBRELLA_KEY], resolved[XL_SFT_KEY])
+        link_checkpoints(checkpoints_dir, resolved[UMBRELLA_KEY], resolved[XL_SFT_KEY])
 
-    for entry in manifest["repos"]:
-        if entry["startup"] != OPTIONAL:
-            continue
-        try:
-            resolved[entry["key"]] = ensure_repo(entry, roots, **ensure_kw)
-        except Exception as exc:
-            _log(f"WARNING: optional {_label(entry)} unavailable, continuing without it:\n{exc}")
+        for entry in manifest["repos"]:
+            if entry["startup"] != OPTIONAL:
+                continue
+            try:
+                resolved[entry["key"]] = ensure_repo(entry, roots, **kw)
+            except Exception as exc:
+                _log(f"WARNING: optional {_label(entry)} skipped, continuing without it:\n{exc}")
+    _log(f"model bootstrap done in {clock() - start:.1f} s")
     return resolved

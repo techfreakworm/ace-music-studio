@@ -104,7 +104,7 @@ def qwen_store(monkeypatch, tmp_path):
     }
     roots = [tmp_path / "hub", tmp_path / "app-cache", tmp_path / "tmp-cache"]
     monkeypatch.setattr(model_store, "load_manifest", lambda *a, **k: {"schema": 1, "repos": [entry]})
-    monkeypatch.setattr(model_store, "default_roots", lambda: roots)
+    monkeypatch.setattr(model_store, "lookup_roots", lambda: roots)
 
     def _write(root):
         snap = model_store.snapshot_path(root, entry)
