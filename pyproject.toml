@@ -5,15 +5,16 @@ description = "Open-source full-song generation studio wrapping ACE-Step 1.5 XL"
 authors = [{ name = "Mayank Gupta" }]
 license = { text = "MIT" }
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.10,<3.12"
 
 [tool.ruff]
 line-length = 110
-target-version = "py311"
+target-version = "py310"
 # checkpoints/ holds downloaded model code shipped by upstream HF repos —
 # linting third-party drop-ins isn't our concern. output/ and research/
-# are runtime artefacts / scratch.
-extend-exclude = ["checkpoints", "output", "research", ".venv", "vendor"]
+# are runtime artefacts / scratch. docs/ is prose: ruff >= 0.17 also
+# formats Python blocks inside Markdown, and the plan/spec quote code verbatim.
+extend-exclude = ["checkpoints", "output", "research", ".venv", "vendor", "docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "RUF"]
@@ -25,6 +26,9 @@ ignore = ["E501"]
 "app.py" = ["E402"]
 
 [tool.pytest.ini_options]
-addopts = "-m 'not gpu' --tb=short"
-markers = ["gpu: requires a real GPU/MPS device; opt in with -m gpu"]
+addopts = "-m 'not gpu and not network' --tb=short"
+markers = [
+    "gpu: requires a real GPU/MPS device; opt in with -m gpu",
+    "network: downloads from the Hugging Face Hub; opt in with -m network",
+]
 testpaths = ["tests"]
