@@ -1335,7 +1335,13 @@ def test_diagnostics_on_spaces_never_raise_when_everything_fails(tmp_path, roots
     assert "audio self-test: FAIL" in capsys.readouterr().err
 
 
-# --- opt-in network test --------------------------------------------------------
+# --- opt-in network tests -------------------------------------------------------
+# CI runs `pytest -m "not gpu"`, which overrides addopts' "not network", so the
+# marker alone does not keep these offline: they also need AMS_NETWORK_TESTS=1.
+
+network = pytest.mark.skipif(
+    os.getenv("AMS_NETWORK_TESTS") != "1", reason="reaches the Hugging Face Hub; set AMS_NETWORK_TESTS=1"
+)
 
 _NETWORK_SCRIPT = textwrap.dedent(
     """
@@ -1357,6 +1363,7 @@ _NETWORK_SCRIPT = textwrap.dedent(
 
 
 @pytest.mark.network
+@network
 def test_network_download_falls_back_to_plain_http_when_xet_cache_is_unwritable(tmp_path, chmod_tree):
     xet = tmp_path / "xet-readonly"
     xet.mkdir()
@@ -1387,3 +1394,40 @@ def test_network_download_falls_back_to_plain_http_when_xet_cache_is_unwritable(
     assert os.stat(snap / "acestep-v15-turbo" / "silence_latent.pt").st_size == 3841215
     assert os.stat(snap / "vae" / "config.json").st_size == 425
     assert f"RESULT {snap}" in proc.stdout
+
+
+def _hub_tree(repo_id: str, revision: str) -> dict[str, int]:
+    """``{path: size}`` for every file of ``repo_id`` at ``revision``, from the Hub tree API."""
+    import urllib.request
+
+    url = f"https://huggingface.co/api/models/{repo_id}/tree/{revision}?recursive=true"
+    sizes: dict[str, int] = {}
+    while url:
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            for item in json.loads(resp.read()):
+                if item.get("type") == "file":
+                    sizes[item["path"]] = item["size"]
+            links = resp.headers.get("Link", "")
+        nxt = [part for part in links.split(",") if 'rel="next"' in part]
+        url = nxt[0].split(";")[0].strip().strip("<>") if nxt else ""
+    return sizes
+
+
+@pytest.mark.network
+@network
+def test_manifest_and_presets_match_the_hub_at_their_pinned_commits():
+    import lora_stack
+
+    checked = 0
+    for repo in _raw_manifest()["repos"]:
+        upstream = _hub_tree(repo["repo_id"], repo["revision"])
+        for f in repo["files"]:
+            assert f["path"] in upstream, f"{repo['repo_id']}@{repo['revision']}: no {f['path']}"
+            assert upstream[f["path"]] == f["size"], (repo["repo_id"], f, upstream[f["path"]])
+            checked += 1
+    for preset in lora_stack.load_presets():
+        assert re.fullmatch(r"[0-9a-f]{40}", preset["revision"]), preset
+        upstream = _hub_tree(preset["hf_id"], preset["revision"])
+        assert preset["filename"] in upstream, preset
+        checked += 1
+    assert checked == sum(len(r["files"]) for r in _raw_manifest()["repos"]) + len(lora_stack.load_presets())
