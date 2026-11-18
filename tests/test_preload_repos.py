@@ -178,9 +178,17 @@ def test_readme_python_version_is_what_zerogpu_runs():
     assert 'python_version: "3.10"' in lines
 
 
+def test_readme_gives_the_bootstrap_an_hour_to_start():
+    # Documented Spaces key (default 30 min); the bootstrap's own budget is 25 min.
+    lines, meta = _front_matter()
+    assert meta["startup_duration_timeout"] == "1h"
+    assert "startup_duration_timeout: 1h" in lines
+    assert model_store.BUDGET_S <= 30 * 60
+
+
 def test_readme_rest_of_front_matter_is_unchanged():
     lines, meta = _front_matter()
-    others = [ln for ln in lines if not ln.startswith(("python_version:", "- "))]
+    others = [ln for ln in lines if not ln.startswith(("python_version:", "startup_duration_timeout:", "- "))]
     assert others == _UNCHANGED_FRONT_MATTER
     assert len(meta["short_description"]) <= 60  # HF rejects pushes otherwise
 
