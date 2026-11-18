@@ -20,11 +20,10 @@ boundary so the real Qwen weights are never loaded in CI.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
-
-import logging
 
 import ace_pipeline as ap
 
@@ -101,7 +100,7 @@ def _get_lm():
     return _LM
 
 
-def _load_hflm(device: str) -> "_HFLM":
+def _load_hflm(device: str) -> _HFLM:
     """Load Qwen 2.5 7B via transformers on the given device (mps/cuda/cpu)."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
