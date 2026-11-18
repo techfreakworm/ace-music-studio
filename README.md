@@ -5,17 +5,17 @@ colorFrom: gray
 colorTo: gray
 sdk: gradio
 sdk_version: 6.14.0
-python_version: "3.11"
+python_version: "3.10"
 app_file: app.py
 pinned: false
 license: mit
 short_description: Song generation studio on ACE-Step 1.5 XL SFT
 preload_from_hub:
-- ACE-Step/Ace-Step1.5
-- ACE-Step/acestep-v15-xl-sft
-- ACE-Step/ACE-Step-v1-chinese-rap-LoRA
-- ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA
-- Qwen/Qwen2.5-7B-Instruct
+- ACE-Step/Ace-Step1.5 Qwen3-Embedding-0.6B/added_tokens.json,Qwen3-Embedding-0.6B/chat_template.jinja,Qwen3-Embedding-0.6B/config.json,Qwen3-Embedding-0.6B/merges.txt,Qwen3-Embedding-0.6B/model.safetensors,Qwen3-Embedding-0.6B/special_tokens_map.json,Qwen3-Embedding-0.6B/tokenizer.json,Qwen3-Embedding-0.6B/tokenizer_config.json,Qwen3-Embedding-0.6B/vocab.json,acestep-5Hz-lm-1.7B/added_tokens.json,acestep-5Hz-lm-1.7B/chat_template.jinja,acestep-5Hz-lm-1.7B/config.json,acestep-5Hz-lm-1.7B/merges.txt,acestep-5Hz-lm-1.7B/model.safetensors,acestep-5Hz-lm-1.7B/special_tokens_map.json,acestep-5Hz-lm-1.7B/tokenizer.json,acestep-5Hz-lm-1.7B/tokenizer_config.json,acestep-5Hz-lm-1.7B/vocab.json,acestep-v15-turbo/config.json,vae/config.json,vae/diffusion_pytorch_model.safetensors 19671f406d603126926c1b7e2adc169acbcade22
+- ACE-Step/acestep-v15-xl-sft apg_guidance.py,config.json,configuration_acestep_v15.py,model-00001-of-00004.safetensors,model-00002-of-00004.safetensors,model-00003-of-00004.safetensors,model-00004-of-00004.safetensors,model.safetensors.index.json,modeling_acestep_v15_xl_base.py,silence_latent.pt d06de46b4622f781cf07f4a013a67d591ca52819
+- Qwen/Qwen2.5-7B-Instruct config.json,generation_config.json,merges.txt,model-00001-of-00004.safetensors,model-00002-of-00004.safetensors,model-00003-of-00004.safetensors,model-00004-of-00004.safetensors,model.safetensors.index.json,tokenizer.json,tokenizer_config.json,vocab.json a09a35458c702b33eeacc393d103063234e8bc28
+- ACE-Step/ACE-Step-v1-chinese-rap-LoRA pytorch_lora_weights.safetensors e40a223cb69a60ba8a8c46752987c152b8a5f828
+- ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA adapter_model.safetensors cb829a12775740c830a6d49795f16913065dc492
 ---
 
 # ACE Music Studio

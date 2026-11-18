@@ -121,3 +121,52 @@ def test_required_repo_failure_ends_import_with_summary_last(monkeypatch, fake_s
     message = str(exc.value.code)
     assert message.endswith(summary)
     assert exc.value.__suppress_context__  # no chained traceback before the summary
+
+
+# --- README front matter (read by HF Spaces at build time) ------------------------
+
+# Every front-matter line that is not python_version or a preload entry, verbatim.
+_UNCHANGED_FRONT_MATTER = [
+    "title: ACE Music Studio",
+    "emoji: 🎵",
+    "colorFrom: gray",
+    "colorTo: gray",
+    "sdk: gradio",
+    "sdk_version: 6.14.0",
+    "app_file: app.py",
+    "pinned: false",
+    "license: mit",
+    "short_description: Song generation studio on ACE-Step 1.5 XL SFT",
+    "preload_from_hub:",
+]
+
+
+def _front_matter() -> tuple[list[str], dict]:
+    import yaml
+
+    text = (REPO_ROOT / "README.md").read_text()
+    assert text.startswith("---\n")
+    raw = text.split("---\n", 2)[1]
+    return raw.splitlines(), yaml.safe_load(raw)
+
+
+def test_readme_preload_from_hub_matches_the_manifest():
+    _, meta = _front_matter()
+    manifest = model_store.load_manifest()
+    expected = [
+        f"{r['repo_id']} {','.join(f['path'] for f in r['files'])} {r['revision']}" for r in manifest["repos"]
+    ]
+    assert meta["preload_from_hub"] == expected
+
+
+def test_readme_python_version_is_what_zerogpu_runs():
+    lines, meta = _front_matter()
+    assert meta["python_version"] == "3.10"
+    assert 'python_version: "3.10"' in lines
+
+
+def test_readme_rest_of_front_matter_is_unchanged():
+    lines, meta = _front_matter()
+    others = [ln for ln in lines if not ln.startswith(("python_version:", "- "))]
+    assert others == _UNCHANGED_FRONT_MATTER
+    assert len(meta["short_description"]) <= 60  # HF rejects pushes otherwise
