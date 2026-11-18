@@ -15,3 +15,4 @@ hf-cache-rw/
 *.mp3
 *.flac
 !presets/*.safetensors
+.ams-cache/
