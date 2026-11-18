@@ -102,33 +102,39 @@ def _get_lm():
     return _LM
 
 
-def _hf_source() -> tuple[str, dict[str, Any]]:
-    """Where transformers loads Qwen from: ``(path or repo id, extra from_pretrained kwargs)``.
+_QWEN_UNAVAILABLE = (
+    "Lyrics are unavailable: the Qwen2.5-7B-Instruct weights were not downloaded when the "
+    "Space started (the startup log says why). Restarting the Space retries the download."
+)
 
-    On Spaces this runs inside the GPU worker, where a Hub call costs GPU time:
-    use the complete local snapshot the model store resolved at startup, or,
-    if there is none, the repo id pinned to the manifest's commit. Off Spaces
-    it is the plain repo id, as before.
+
+def _hf_source() -> str:
+    """Where transformers loads Qwen from: a local snapshot dir on Spaces, else the repo id.
+
+    On Spaces this runs inside the GPU worker, where a Hub call costs GPU time
+    and a 15 GB download cannot fit in the call: use the complete local
+    snapshot the model store resolved at startup, or raise ``ValueError``
+    (shown to the user) if there is none. Off Spaces it is the plain repo id,
+    as before.
     """
     if not os.getenv("SPACE_ID"):
-        return _DEFAULT_CUDA_ID, {}
+        return _DEFAULT_CUDA_ID
     local = model_store.local_snapshot(_DEFAULT_CUDA_ID)
-    if local is not None:
-        return str(local), {}
-    entry = model_store.get_repo(model_store.load_manifest(), repo_id=_DEFAULT_CUDA_ID)
-    _log.warning("no complete local snapshot of %s; loading it from the Hub", _DEFAULT_CUDA_ID)
-    return _DEFAULT_CUDA_ID, {"revision": entry["revision"]}
+    if local is None:
+        _log.warning("no complete local snapshot of %s; Lyrics is unavailable", _DEFAULT_CUDA_ID)
+        raise ValueError(_QWEN_UNAVAILABLE)
+    return str(local)
 
 
 def _load_hflm(device: str) -> _HFLM:
     """Load Qwen 2.5 7B via transformers on the given device (mps/cuda/cpu)."""
+    source = _hf_source()
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     dtype = torch.bfloat16 if device in ("cuda", "mps") else torch.float32
-    source, extra = _hf_source()
-    tok = AutoTokenizer.from_pretrained(source, **extra)
-    model = AutoModelForCausalLM.from_pretrained(source, torch_dtype=dtype, **extra).to(device)
+    tok = AutoTokenizer.from_pretrained(source)
+    model = AutoModelForCausalLM.from_pretrained(source, torch_dtype=dtype).to(device)
     return _HFLM(model=model, tokenizer=tok)
 
 

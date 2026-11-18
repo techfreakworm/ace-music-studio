@@ -137,17 +137,24 @@ def test_load_hflm_on_spaces_uses_the_local_snapshot(monkeypatch, fake_hf, qwen_
     assert model.calls == [(str(snap), {"torch_dtype": "bf16"})]
 
 
-def test_load_hflm_on_spaces_falls_back_to_the_pinned_repo_id(monkeypatch, fake_hf, qwen_store):
+def test_load_hflm_on_spaces_without_a_local_snapshot_raises_value_error(
+    monkeypatch, fake_hf, qwen_store, no_network
+):
     roots, write = qwen_store
     snap = write(roots[0])
     (snap / "tokenizer.json").write_bytes(b"short")  # wrong size: not complete
     monkeypatch.setenv("SPACE_ID", "test/test")
+    monkeypatch.setattr(ll, "_LM", None)
+    monkeypatch.setattr(ll.ap, "detect_device", lambda: "cuda")
     tok, model = fake_hf
 
-    ll._load_hflm("cuda")
+    with pytest.raises(ValueError, match=r"Qwen2\.5-7B-Instruct") as exc:
+        ll._get_lm()
 
-    assert tok.calls == [(ll._DEFAULT_CUDA_ID, {"revision": QWEN_REV})]
-    assert model.calls == [(ll._DEFAULT_CUDA_ID, {"torch_dtype": "bf16", "revision": QWEN_REV})]
+    # No 15 GB download inside the GPU call: nothing is loaded by repo id.
+    assert tok.calls == [] and model.calls == []
+    assert "restart" in str(exc.value).lower()
+    assert ll._LM is None  # the next click looks again
 
 
 def test_load_hflm_off_spaces_is_unchanged(monkeypatch, fake_hf, qwen_store):
