@@ -304,9 +304,17 @@ def _safe_call(fn, *args, **kwargs):
     - ``ValueError`` — mode-handler param validation (missing prompt, etc.)
     - ``FileNotFoundError`` — user-supplied ref_audio path doesn't exist
     - ``RuntimeError`` — pipeline crash, including MPS op-fallback failures
+    - anything else — ``gr.Error("<ExceptionType>: <message>")``; on ZeroGPU a
+      non-``gr.Error`` exception reaches the user as a bare class name
+
+    A ``gr.Error`` raised inside the handler (e.g. by ``spaces``) passes
+    through unchanged; it subclasses ``ValueError`` and would otherwise be
+    re-wrapped below.
     """
     try:
         return fn(*args, **kwargs)
+    except gr.Error:
+        raise
     except lora_stack.LoRAValidationError as e:
         raise gr.Error(str(e)) from e
     except ValueError as e:
@@ -318,6 +326,8 @@ def _safe_call(fn, *args, **kwargs):
         if "MPS" in msg or "mps" in msg:
             raise gr.Error(f"Apple Silicon op issue: {msg}. PYTORCH_ENABLE_MPS_FALLBACK is enabled.") from e
         raise gr.Error(f"Generation failed: {msg}") from e
+    except Exception as e:
+        raise gr.Error(f"{type(e).__name__}: {e}") from e
 
 
 def _sha256(path: str) -> str:
