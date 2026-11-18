@@ -1184,6 +1184,157 @@ def test_diagnostics_never_raise_when_every_probe_fails(tmp_path, roots, monkeyp
     assert "[ams]" in capsys.readouterr().err
 
 
+def _diag_text(capsys, roots, app_dir, **kw) -> str:
+    ms.log_diagnostics(roots, app_dir=app_dir, **kw)
+    return capsys.readouterr().err
+
+
+def test_diagnostics_report_the_filesystem_type_of_each_root(tmp_path, capsys):
+    data = tmp_path / "data"
+    data.mkdir()
+    mounts = tmp_path / "mounts"
+    mounts.write_text(
+        "overlay / overlay rw 0 0\n"
+        "tmpfs /tmp tmpfs rw,nosuid 0 0\n"
+        f"/dev/sdb1 {os.path.realpath(data)} ext4 rw 0 0\n"
+    )
+    roots = [data / "hub", tmp_path / "elsewhere" / "hub"]
+
+    text = _diag_text(capsys, roots, tmp_path, mounts_path=str(mounts))
+
+    root1 = next(line for line in text.splitlines() if f"root1 {roots[0]}:" in line)
+    assert f"fs=ext4({os.path.realpath(data)})" in root1
+
+
+def test_diagnostics_without_proc_mounts_say_so(tmp_path, roots, capsys):
+    text = _diag_text(capsys, roots, tmp_path, mounts_path=str(tmp_path / "no-such-mounts"))
+    assert "fs=n/a" in text
+
+
+def test_diagnostics_report_whether_the_vendored_handler_exists(tmp_path, roots, capsys):
+    assert "acestep/handler.py exists=no" in _diag_text(capsys, roots, tmp_path)
+    handler = tmp_path / "vendor" / "ace-step" / "acestep" / "handler.py"
+    handler.parent.mkdir(parents=True)
+    handler.write_text("")
+    assert "acestep/handler.py exists=yes" in _diag_text(capsys, roots, tmp_path)
+
+
+def test_diagnostics_report_torch_cuda_only_when_torch_is_already_imported(
+    tmp_path, roots, monkeypatch, capsys
+):
+    import types
+
+    monkeypatch.delitem(sys.modules, "torch", raising=False)
+    assert "torch.version.cuda=<torch not imported>" in _diag_text(capsys, roots, tmp_path)
+    assert "torch" not in sys.modules  # the diagnostics never import torch
+
+    fake = types.ModuleType("torch")
+    fake.version = types.SimpleNamespace(cuda="13.0")
+    monkeypatch.setitem(sys.modules, "torch", fake)
+    assert "torch.version.cuda=13.0" in _diag_text(capsys, roots, tmp_path)
+
+
+def _fake_spaces(monkeypatch, get_config):
+    import types
+
+    config = types.ModuleType("spaces.zero.config")
+    config.get_config = get_config
+    zero = types.ModuleType("spaces.zero")
+    zero.config = config
+    spaces = types.ModuleType("spaces")
+    spaces.zero = zero
+    monkeypatch.setitem(sys.modules, "spaces", spaces)
+    monkeypatch.setitem(sys.modules, "spaces.zero", zero)
+    monkeypatch.setitem(sys.modules, "spaces.zero.config", config)
+
+
+def _no_audio_test(*args, **kwargs):
+    return subprocess.CompletedProcess(args, 0, stdout="AMS_AUDIO_OK fake\n", stderr="")
+
+
+def test_diagnostics_on_spaces_report_the_zerogpu_duration_factor(tmp_path, roots, monkeypatch, capsys):
+    _fake_spaces(monkeypatch, lambda: {"duration_factor": 1.5, "model": "RTX PRO 6000"})
+    text = _diag_text(capsys, roots, tmp_path, on_spaces=True, audio_runner=_no_audio_test)
+    assert "zerogpu duration_factor=1.5" in text
+
+
+def test_diagnostics_survive_a_failing_zerogpu_lookup(tmp_path, roots, monkeypatch, capsys):
+    def _broken():
+        raise RuntimeError("no /proc/driver/nvidia")
+
+    _fake_spaces(monkeypatch, _broken)
+    text = _diag_text(capsys, roots, tmp_path, on_spaces=True, audio_runner=_no_audio_test)
+    assert "zerogpu duration_factor=? (RuntimeError)" in text
+
+
+def test_diagnostics_off_spaces_skip_zerogpu_and_the_audio_self_test(tmp_path, roots, capsys):
+    def _runner(*args, **kwargs):
+        raise AssertionError("audio self-test ran off Spaces")
+
+    text = _diag_text(capsys, roots, tmp_path, on_spaces=False, audio_runner=_runner)
+    assert "zerogpu" not in text and "audio self-test" not in text
+
+
+def test_audio_self_test_passes_and_logs_versions(capsys):
+    calls = []
+
+    def _runner(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        out = "AMS_AUDIO_VERSIONS torch=2.13.0\nAMS_AUDIO_OK torch=2.13.0 torchaudio=2.11.0 shape=(1, 1600) sr=16000\n"
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    assert ms.audio_selftest(runner=_runner) is True
+
+    ((cmd, kwargs),) = calls
+    assert cmd[0] == sys.executable and cmd[1] == "-c"
+    for needle in ("import torch", "import torchaudio", "import torchcodec", "wave.open", "torchaudio.load"):
+        assert needle in cmd[2], needle
+    assert kwargs["timeout"] == 60
+    assert kwargs["capture_output"] is True and kwargs["text"] is True
+    err = capsys.readouterr().err
+    assert "audio self-test: pass" in err and "torchaudio=2.11.0" in err
+
+
+def test_audio_self_test_reports_a_failure(capsys):
+    def _runner(cmd, **kwargs):
+        stderr = "Traceback...\nOSError: libtorchaudio.so: undefined symbol: torch_exception_get_what\n"
+        return subprocess.CompletedProcess(cmd, 1, stdout="AMS_AUDIO_VERSIONS torch=2.11.0\n", stderr=stderr)
+
+    assert ms.audio_selftest(runner=_runner) is False
+    err = capsys.readouterr().err
+    assert "audio self-test: FAIL" in err and "undefined symbol" in err and "torch=2.11.0" in err
+
+
+@pytest.mark.parametrize(
+    "error",
+    [subprocess.TimeoutExpired(cmd="python", timeout=60), FileNotFoundError("python"), RuntimeError("x")],
+)
+def test_audio_self_test_never_raises(capsys, error):
+    def _runner(cmd, **kwargs):
+        raise error
+
+    assert ms.audio_selftest(runner=_runner) is False
+    assert "audio self-test: FAIL" in capsys.readouterr().err
+
+
+def test_diagnostics_on_spaces_never_raise_when_everything_fails(tmp_path, roots, monkeypatch, capsys):
+    import importlib.metadata
+    import shutil
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("probe exploded")
+
+    _fake_spaces(monkeypatch, _boom)
+    monkeypatch.setattr(importlib.metadata, "version", _boom)
+    monkeypatch.setattr(shutil, "disk_usage", _boom)
+    monkeypatch.setattr(os, "getuid", _boom)
+    monkeypatch.setattr(os, "getgid", _boom)
+
+    ms.log_diagnostics(roots, app_dir=tmp_path, on_spaces=True, audio_runner=_boom, mounts_path=str(tmp_path))
+
+    assert "audio self-test: FAIL" in capsys.readouterr().err
+
+
 # --- opt-in network test --------------------------------------------------------
 
 _NETWORK_SCRIPT = textwrap.dedent(

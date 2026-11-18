@@ -45,6 +45,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -498,7 +499,37 @@ def _package_version(name: str) -> str:
         return "not-installed"
 
 
-def _path_line(label: str, path: Path | str) -> str:
+def _read_mounts(mounts_path: str) -> list[tuple[str, str]] | None:
+    """``(mount point, fs type)`` pairs from /proc/mounts, or ``None`` when unreadable."""
+    try:
+        with open(mounts_path) as f:
+            text = f.read()
+    except OSError:
+        return None
+    pairs = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            pairs.append((parts[1].replace("\\040", " "), parts[2]))
+    return pairs
+
+
+def _fs_type(path: Path | str, mounts: list[tuple[str, str]] | None) -> str:
+    if mounts is None:
+        return "n/a"
+    p = Path(path)
+    while not os.path.exists(p) and p != p.parent:
+        p = p.parent
+    real = os.path.realpath(p)
+    best_mount, best_type = "", "?"
+    for mount, fstype in mounts:
+        inside = real == mount or real.startswith(mount.rstrip("/") + "/")
+        if inside and len(mount) > len(best_mount):
+            best_mount, best_type = mount, fstype
+    return f"{best_type}({best_mount})" if best_mount else "?"
+
+
+def _path_line(label: str, path: Path | str, mounts: list[tuple[str, str]] | None = None) -> str:
     path = str(path)
     try:
         st = os.stat(path)
@@ -510,8 +541,10 @@ def _path_line(label: str, path: Path | str) -> str:
     writable = _safe(lambda: "yes" if os.access(path, os.W_OK) else "no")
     free = _safe(lambda: _disk_free(path))
     free_text = f"{free / 1e9:.1f}GB" if isinstance(free, int) else str(free)
+    fs = _safe(lambda: _fs_type(path, mounts))
     return (
-        f"path {label} {path}: exists={exists} owner={owner} mode={mode} writable={writable} free={free_text}"
+        f"path {label} {path}: exists={exists} owner={owner} mode={mode} writable={writable} "
+        f"free={free_text} fs={fs}"
     )
 
 
@@ -521,12 +554,32 @@ def _hub_constant(name: str) -> Any:
     return getattr(constants, name, "<undefined>")
 
 
-def _diagnostic_lines(roots: list[Path], app_dir: Path) -> list[str]:
+def _torch_cuda() -> str:
+    """``torch.version.cuda`` only if torch is already imported (never import it here)."""
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return "<torch not imported>"
+    return str(getattr(getattr(torch, "version", None), "cuda", None))
+
+
+def _zerogpu_duration_factor() -> Any:
+    """spaces' factor on requested GPU seconds (1.5 on a large Blackwell slice)."""
+    import importlib
+
+    return importlib.import_module("spaces.zero.config").get_config()["duration_factor"]
+
+
+def _diagnostic_lines(roots: list[Path], app_dir: Path, on_spaces: bool, mounts_path: str) -> list[str]:
     lines = [f"python {sys.version.split()[0]} ({sys.executable})"]
     versions = " ".join(f"{p}={_safe(lambda p=p: _package_version(p))}" for p in _DIAG_PACKAGES)
     lines.append(f"versions {versions}")
+    lines.append(f"torch.version.cuda={_safe(_torch_cuda)}")
+    if on_spaces:
+        lines.append(f"zerogpu duration_factor={_safe(_zerogpu_duration_factor)}")
     lines.append(f"ids uid={_safe(os.getuid)} gid={_safe(os.getgid)}")
     lines.append("env " + " ".join(f"{v}={os.environ.get(v, '<unset>')}" for v in _DIAG_ENV))
+    mounts = _safe(lambda: _read_mounts(mounts_path), None)
+    mounts = mounts if isinstance(mounts, list) else None
     home = _safe(lambda: os.path.expanduser("~"))
     probes: list[tuple[str, Any]] = [
         ("~/.cache", os.path.join(home, ".cache")),
@@ -537,19 +590,111 @@ def _diagnostic_lines(roots: list[Path], app_dir: Path) -> list[str]:
     probes += [(f"root{i}", root) for i, root in enumerate(roots, start=1)]
     probes += [("tempdir", _safe(tempfile.gettempdir)), ("app-dir", app_dir)]
     for label, path in probes:
-        lines.append(_safe(lambda label=label, path=path: _path_line(label, path), f"path {label} {path}: ?"))
+        line = _safe(
+            lambda label=label, path=path: _path_line(label, path, mounts), f"path {label} {path}: ?"
+        )
+        lines.append(line)
+    handler = app_dir / "vendor" / "ace-step" / "acestep" / "handler.py"
+    lines.append(f"vendor acestep/handler.py exists={_safe(lambda: 'yes' if handler.is_file() else 'no')}")
     return lines
 
 
-def log_diagnostics(roots: Iterable[Path | str], *, app_dir: Path | str = APP_DIR) -> None:
-    """One block of ``[ams]`` lines on stderr describing the runtime. Never raises."""
+# Runs in a subprocess: decode failures are silent in Cover/Extend/Edit (the
+# fork swallows them), and only the Space has the Linux torchaudio/torchcodec
+# binaries and system FFmpeg this exercises.
+_AUDIO_SELFTEST = """
+import os, shutil, tempfile, wave
+import torch
+import torchaudio
+import torchcodec
+print("AMS_AUDIO_VERSIONS torch=%s torchaudio=%s torchcodec=%s cuda=%s" % (
+    torch.__version__, torchaudio.__version__, getattr(torchcodec, "__version__", "?"), torch.version.cuda))
+d = tempfile.mkdtemp(prefix="ams-audio-selftest-")
+try:
+    path = os.path.join(d, "probe.wav")
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\\0\\0" * 1600)
+    wav, sr = torchaudio.load(path)
+    assert sr == 16000 and wav.shape[-1] == 1600, (tuple(wav.shape), sr)
+    print("AMS_AUDIO_OK torch=%s torchaudio=%s torchcodec=%s shape=%s sr=%d" % (
+        torch.__version__, torchaudio.__version__, getattr(torchcodec, "__version__", "?"), tuple(wav.shape), sr))
+finally:
+    shutil.rmtree(d, ignore_errors=True)
+"""
+AUDIO_SELFTEST_TIMEOUT_S = 60
+
+
+def audio_selftest(
+    *, runner: Callable[..., Any] | None = None, timeout_s: int = AUDIO_SELFTEST_TIMEOUT_S
+) -> bool:
+    """Import torch/torchaudio/torchcodec and decode a 0.1 s WAV in a subprocess. Never raises."""
     try:
-        lines = _diagnostic_lines([Path(r) for r in roots], Path(app_dir))
+        runner = subprocess.run if runner is None else runner
+        start = time.monotonic()
+        try:
+            proc = runner(
+                [sys.executable, "-c", _AUDIO_SELFTEST],
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                cwd=tempfile.gettempdir(),  # keep the app dir's modules off sys.path
+            )
+        except subprocess.TimeoutExpired:
+            _log(f"audio self-test: FAIL (timed out after {timeout_s} s)")
+            return False
+        except Exception as exc:
+            _log(f"audio self-test: FAIL (could not run: {_describe(exc)})")
+            return False
+        out = (proc.stdout or "").splitlines()
+        ok = [line for line in out if line.startswith("AMS_AUDIO_OK ")]
+        if proc.returncode == 0 and ok:
+            _log(
+                f"audio self-test: pass in {time.monotonic() - start:.1f} s ({ok[-1][len('AMS_AUDIO_OK ') :]})"
+            )
+            return True
+        versions = [
+            line[len("AMS_AUDIO_VERSIONS ") :] for line in out if line.startswith("AMS_AUDIO_VERSIONS ")
+        ]
+        err = (proc.stderr or "").strip().splitlines()
+        reason = err[-1] if err else "no AMS_AUDIO_OK line"
+        _log(
+            f"audio self-test: FAIL (exit {proc.returncode}; {versions[-1] if versions else 'imports failed'}): "
+            f"{_shorten(reason, 300)}"
+        )
+        return False
+    except Exception as exc:
+        with contextlib.suppress(Exception):
+            _log(f"audio self-test: FAIL ({_describe(exc)})")
+        return False
+
+
+def log_diagnostics(
+    roots: Iterable[Path | str],
+    *,
+    app_dir: Path | str = APP_DIR,
+    on_spaces: bool | None = None,
+    audio_runner: Callable[..., Any] | None = None,
+    mounts_path: str = "/proc/mounts",
+) -> None:
+    """One block of ``[ams]`` lines on stderr describing the runtime. Never raises.
+
+    On Spaces (``SPACE_ID`` set, unless ``on_spaces`` says otherwise) it also
+    logs the ZeroGPU duration factor and runs the audio self-test.
+    """
+    try:
+        if on_spaces is None:
+            on_spaces = bool(os.getenv("SPACE_ID"))
+        lines = _diagnostic_lines([Path(r) for r in roots], Path(app_dir), on_spaces, mounts_path)
     except Exception as exc:
         lines = [f"diagnostics failed: {_describe(exc)}"]
     for line in lines:
         with contextlib.suppress(Exception):
             _log(line)
+    if on_spaces:
+        audio_selftest(runner=audio_runner)
 
 
 # --- startup entry point ----------------------------------------------------------
