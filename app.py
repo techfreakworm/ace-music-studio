@@ -29,11 +29,12 @@ DO NOT switch this back to ``gr.Tabs`` — that produces top-positioned
 horizontal tabs which contradicts the wireframes.
 
 On HF Spaces (``SPACE_ID`` env present), ``_bootstrap_spaces_cache()``
-runs once on import to (a) hardlink-mirror the build-user-owned HF hub
-cache into a runtime-writable ``~/hf-cache-rw/`` and (b) symlink the
-preloaded snapshots into ``./models/<org>/<repo>/`` so ACE-Step's
-checkpoint resolver finds them. On Mac/Linux locally, it's a no-op —
-local dev uses ``setup.sh``'s site-packages symlink instead.
+runs once on import: ``model_store`` finds the pinned snapshots listed in
+``model_manifest.json`` on disk (or downloads exactly those files) and
+links the ACE-Step components into ``vendor/ace-step/checkpoints/``, where
+the fork's checkpoint resolver looks. Off Spaces it's a no-op — locally
+``vendor/ace-step/checkpoints/`` is filled by the fork's own downloader or
+by hand.
 """
 
 from __future__ import annotations
@@ -56,6 +57,18 @@ os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 # is always writable. Off-Spaces this is harmless — transformers just uses
 # the redirected path. ~50 KB per model, fast re-download on cold starts.
 os.environ.setdefault("HF_MODULES_CACHE", "/tmp/hf-modules")
+
+# On Spaces, keep the other caches written at runtime in /tmp too. hf_xet
+# creates <cache>/<endpoint>/staging before every download, under
+# ~/.cache/huggingface/xet by default; on 2026-09-22 that directory could not
+# be created and the import died. TORCH_HOME holds the Demucs weights, which
+# torch.hub fetches outside the HF cache. HF_HOME, HF_HUB_CACHE and
+# XDG_CACHE_HOME stay untouched so a preloaded hub cache is still found.
+# Must run before `import gradio`, which imports huggingface_hub and freezes
+# its constants.
+if os.getenv("SPACE_ID"):
+    os.environ.setdefault("HF_XET_CACHE", "/tmp/ams-hf-xet")
+    os.environ.setdefault("TORCH_HOME", "/tmp/ams-torch")
 
 # Vendored ace-step (git submodule at vendor/ace-step/) — added to sys.path
 # BEFORE any module that imports `from acestep import ...`. We vendor
@@ -82,6 +95,7 @@ print("[ams] gradio imported", flush=True, file=_sys.stderr)
 import ace_pipeline
 import backend as be
 import lora_stack
+import model_store
 import modes
 import post_process
 import theme
@@ -99,73 +113,39 @@ def get_backend() -> be.ACEStepStudioBackend:
     return _BACKEND
 
 
-# Repos that are pre-downloaded by HF Spaces' ``preload_from_hub`` (see
-# README frontmatter). The two ACE-Step repos *must* be symlinked into
-# ``./models/<org>/<repo>/`` so the fork's checkpoint resolver finds them
-# without an extra network round-trip. The LoRA repos and Qwen don't
-# strictly need the symlink — ``lora_stack.download_preset`` and the
-# ``transformers`` Auto* loaders resolve them via the HF cache directly
-# from ``hf_hub_download(repo_id, filename)`` / ``from_pretrained(repo_id)``.
-# Including them here is a belt-and-braces measure: the snapshot_download
-# call in ``_symlink_snapshots_into_models`` short-circuits when files are
-# already cached, so the only cost is one symlink each.
-_PRELOAD_REPOS = (
-    "ACE-Step/Ace-Step1.5",
-    "ACE-Step/acestep-v15-xl-sft",
-    "ACE-Step/ACE-Step-v1-chinese-rap-LoRA",
-    "ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA",
-    "Qwen/Qwen2.5-7B-Instruct",
-)
-
-
 def _symlink_ace_step_checkpoints() -> None:
-    """Pre-populate the fork's hardcoded checkpoint dir with symlinks to
-    HF-preloaded snapshots so it doesn't trigger its built-in auto-download
-    on first inference.
+    """Resolve the pinned model snapshots and link them where the fork looks.
 
     The fork's AceStepHandler resolves checkpoints relative to its own
     install dir (here, vendor/ace-step/checkpoints/). Expected layout:
 
         vendor/ace-step/checkpoints/
-        ├── <Ace-Step1.5 contents>     ← vae/, encoder/, 5Hz-lm/, … (flat)
-        └── acestep-v15-xl-sft/         ← the XL SFT DiT variant
+        ├── vae/, Qwen3-Embedding-0.6B/,      ← from ACE-Step/Ace-Step1.5
+        │   acestep-5Hz-lm-1.7B/, acestep-v15-turbo/
+        └── acestep-v15-xl-sft/               ← the XL SFT DiT
 
-    Without this, initialize_service() kicks off an async auto-download,
-    returns before it finishes, then generate_music() hits
-    "Model not fully initialized" on the first user click.
+    ``model_store.startup`` finds each repo of ``model_manifest.json`` complete
+    on disk at its pinned commit (no network, no write) or downloads exactly
+    the listed files, then creates those links. If any of the four umbrella
+    components were missing, the fork would download the whole 10 GB umbrella
+    synchronously inside the first GPU call.
     """
-    from huggingface_hub import snapshot_download
-
-    checkpoints_dir = _VENDORED_ACE_STEP / "checkpoints"
-    checkpoints_dir.mkdir(parents=True, exist_ok=True)
-
-    # Umbrella repo → symlink each top-level entry flat into checkpoints/.
-    # snapshot_download is a no-op when files are already preloaded into the
-    # HF cache; it just returns the snapshot dir on disk.
-    umbrella = Path(snapshot_download(repo_id="ACE-Step/Ace-Step1.5"))
-    for child in umbrella.iterdir():
-        target = checkpoints_dir / child.name
-        if target.exists() or target.is_symlink():
-            continue
-        target.symlink_to(child)
-
-    # XL SFT DiT variant → as the subdir name the fork looks for.
-    xl_snap = Path(snapshot_download(repo_id="ACE-Step/acestep-v15-xl-sft"))
-    xl_target = checkpoints_dir / "acestep-v15-xl-sft"
-    if not (xl_target.exists() or xl_target.is_symlink()):
-        xl_target.symlink_to(xl_snap)
+    model_store.startup(_VENDORED_ACE_STEP / "checkpoints")
 
 
 def _bootstrap_spaces_cache() -> None:
-    """On HF Spaces, point the fork's checkpoint resolver at preloaded snapshots.
+    """On HF Spaces, make the pinned model snapshots available before the UI starts.
 
-    Skipped locally — local dev uses setup.sh's site-packages symlink instead,
-    since the apple-silicon fork hardcodes its checkpoint resolver to its own
-    install dir.
+    No-op locally. A required repo that cannot be found or downloaded ends the
+    import with the model store's short summary as the last lines of output:
+    the Space API keeps only the last 2000 characters of the log.
     """
     if not os.getenv("SPACE_ID"):
         return
-    _symlink_ace_step_checkpoints()
+    try:
+        _symlink_ace_step_checkpoints()
+    except model_store.ModelStoreError as e:
+        raise SystemExit(f"[ams] model bootstrap failed:\n{e}") from None
 
 
 def _warm_demucs_on_spaces() -> None:
