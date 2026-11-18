@@ -87,6 +87,7 @@ print(f"[ams] sys.path patched (vendor exists: {_VENDORED_ACE_STEP.exists()})", 
 import hashlib
 import random
 import shutil  # noqa: F401  (reserved for future cleanup paths)
+import traceback
 
 import gradio as gr
 
@@ -136,16 +137,20 @@ def _symlink_ace_step_checkpoints() -> None:
 def _bootstrap_spaces_cache() -> None:
     """On HF Spaces, make the pinned model snapshots available before the UI starts.
 
-    No-op locally. A required repo that cannot be found or downloaded ends the
-    import with the model store's short summary as the last lines of output:
-    the Space API keeps only the last 2000 characters of the log.
+    No-op locally. Any failure (a required repo that cannot be found or
+    downloaded, or anything else) prints the traceback, then the short summary
+    as the very last lines, and exits with status 1 without a second
+    traceback: the Space API keeps only the last 2000 characters of the log.
     """
     if not os.getenv("SPACE_ID"):
         return
     try:
         _symlink_ace_step_checkpoints()
-    except model_store.ModelStoreError as e:
-        raise SystemExit(f"[ams] model bootstrap failed:\n{e}") from None
+    except Exception as e:
+        traceback.print_exc()
+        summary = str(e) if isinstance(e, model_store.ModelStoreError) else f"{type(e).__name__}: {e}"
+        print(f"[ams] model bootstrap failed:\n{summary}", file=_sys.stderr, flush=True)
+        raise SystemExit(1) from None
 
 
 def _warm_demucs_on_spaces() -> None:

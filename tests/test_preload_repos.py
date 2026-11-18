@@ -106,21 +106,31 @@ def test_bootstrap_delegates_to_model_store_on_spaces(monkeypatch, fake_startup,
     assert [c[0] for c in fake_startup.calls] == [tmp_path / "vendor" / "ace-step" / "checkpoints"]
 
 
-def test_required_repo_failure_ends_import_with_summary_last(monkeypatch, fake_startup):
-    summary = (
-        "could not get o/xl@"
-        + "a" * 40
-        + " (1 files, 0.00 GB) into any cache root:\n  /r: PermissionError: no"
-    )
-    fake_startup.error = model_store.ModelStoreError(summary)
+@pytest.mark.parametrize("kind", ["model_store", "other"])
+def test_bootstrap_failure_prints_traceback_then_summary_last_and_exits_1(
+    monkeypatch, fake_startup, capsys, kind
+):
+    if kind == "model_store":
+        summary = (
+            "could not get o/xl@" + "a" * 40 + " (1 files, 0.00 GB): no cache root is usable\n  /r: denied"
+        )
+        fake_startup.error = model_store.ModelStoreError(summary)
+    else:  # a bug or an OS error outside the resolver ends the same way
+        summary = "OSError: [Errno 30] Read-only file system: 'checkpoints'"
+        fake_startup.error = OSError(30, "Read-only file system", "checkpoints")
     monkeypatch.setenv("SPACE_ID", "test/test")
 
     with pytest.raises(SystemExit) as exc:
         app._bootstrap_spaces_cache()
 
-    message = str(exc.value.code)
-    assert message.endswith(summary)
-    assert exc.value.__suppress_context__  # no chained traceback before the summary
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "Traceback (most recent call last)" in err
+    assert err.index("Traceback") < err.rindex("[ams] model bootstrap failed:")
+    # The Space API keeps the last 2000 characters: the summary must be the last thing printed.
+    assert err.rstrip().endswith(summary.splitlines()[-1])
+    assert err.rstrip()[-2000:].count("[ams] model bootstrap failed:") == 1
+    assert summary.splitlines()[0] in err.rstrip()[-2000:]
 
 
 # --- README front matter (read by HF Spaces at build time) ------------------------
