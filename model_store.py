@@ -115,9 +115,13 @@ def _gb(n_bytes: float) -> str:
     return f"{n_bytes / 1e9:.2f}"
 
 
-def _describe(exc: BaseException, limit: int = 300) -> str:
-    text = " ".join(f"{type(exc).__name__}: {exc}".split())
+def _shorten(text: str, limit: int) -> str:
+    text = " ".join(text.split())
     return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _describe(exc: BaseException, limit: int = 300) -> str:
+    return _shorten(f"{type(exc).__name__}: {exc}", limit)
 
 
 def _label(entry: dict) -> str:
@@ -392,7 +396,9 @@ def ensure_repo(
         f"could not get {entry['repo_id']}@{entry['revision']} "
         f"({len(entry['files'])} files, {_gb(total)} GB) into any cache root:"
     ]
-    lines += [f"  {root}: {reason}" for root, reason in failures]
+    # Short enough that the whole summary survives in the 2000-character log
+    # tail the Space API keeps.
+    lines += [f"  {root}: {_shorten(reason, 400)}" for root, reason in failures]
     if not failures:
         lines.append("  (no cache roots given)")
     raise ModelStoreError("\n".join(lines))

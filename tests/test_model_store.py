@@ -569,6 +569,22 @@ def test_ensure_raises_one_summary_when_every_root_fails(roots, fake_time):
     assert len(dl.calls) == 3
 
 
+def test_ensure_summary_fits_the_space_log_tail_even_with_long_errors(roots, ensure_kw):
+    entry = make_entry(FILES, repo_id="ACE-Step/Some-Repo")
+    huge = OSError("I/O error: " + "x" * 5000 + " (os error 13)")
+    dl = FakeDownloader([entry], {"ACE-Step/Some-Repo": [huge] * 10})
+
+    with pytest.raises(ms.ModelStoreError) as exc:
+        ms.ensure_repo(entry, roots, downloader=dl, **ensure_kw)
+
+    msg = str(exc.value)
+    # app.py prefixes one short line; the Space API keeps the last 2000 characters.
+    assert len(msg) < 1900, len(msg)
+    assert msg.startswith(f"could not get ACE-Step/Some-Repo@{REV}")
+    for root in roots:
+        assert str(root) in msg
+
+
 # --- R9.4: the 2026-09-22 state -------------------------------------------------
 
 
