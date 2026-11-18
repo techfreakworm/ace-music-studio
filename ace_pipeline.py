@@ -27,24 +27,32 @@ single ``ACEStepStudio`` wrapper that owns both handlers and exposes a
 ``generate(params: dict) -> str`` method returning the audio path.
 ``get_pipeline()`` returns the lazy singleton wrapper.
 
-Checkpoints live under ``{project_root}/checkpoints/{config_path}/``.
-On Mac with the apple-silicon fork, the fork auto-downloads from
-HuggingFace if a checkpoint is missing, but in practice we pre-download
-via ``hf download`` before the first inference call to avoid pytest
-timeouts.
+Checkpoints live under ``vendor/ace-step/checkpoints/``: the fork's
+``AceStepHandler`` ignores ``project_root`` and resolves checkpoints
+relative to its own install dir, and ``app._symlink_ace_step_checkpoints``
+populates exactly that directory. The 5Hz LM is looked up in the same
+place.
 """
 
 from __future__ import annotations
 
 import os
+import sys
+import time
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent
-_CHECKPOINTS_DIR = _REPO_ROOT / "checkpoints"
+# Same directory the fork's DiT handler resolves (handler.py
+# ``_get_project_root()`` + "/checkpoints"); the only one populated on the Space.
+_CHECKPOINTS_DIR = _REPO_ROOT / "vendor" / "ace-step" / "checkpoints"
 _OUTPUT_DIR = _REPO_ROOT / "output"
 
 _DEFAULT_DIT_CONFIG = "acestep-v15-xl-sft"
 _DEFAULT_LM_MODEL = "acestep-5Hz-lm-1.7B"
+
+
+def _log(message: str) -> None:
+    print(f"[ams] {message}", file=sys.stderr, flush=True)
 
 
 def detect_device() -> str:
@@ -86,6 +94,8 @@ class ACEStepStudio:
 
     Owns one ``AceStepHandler`` (DiT) and one ``LLMHandler`` (5Hz LM
     planner). Both are lazy-loaded on the first ``generate(...)`` call.
+    The DiT is required; the LM is optional and stays ``None`` when it
+    fails to load (``generate_music`` then runs the DiT alone).
     """
 
     def __init__(
@@ -106,33 +116,71 @@ class ACEStepStudio:
 
     @property
     def is_loaded(self) -> bool:
-        return self._dit is not None and self._llm is not None
+        # The LM is optional (see _ensure_loaded), so the DiT alone decides.
+        return self._dit is not None
 
     def _ensure_loaded(self) -> None:
-        """First-call lazy load of both handlers. Heavy imports stay local."""
+        """First-call lazy load of both handlers. Heavy imports stay local.
+
+        Both fork initialisers report failure by returning ``(status, False)``
+        rather than raising. A DiT failure raises ``RuntimeError`` with the
+        fork's status text and caches nothing, so the next call retries. An
+        LM failure is logged and generation continues without the LM.
+        """
         if self.is_loaded:
             return
 
         from acestep.handler import AceStepHandler
         from acestep.llm_inference import LLMHandler
 
-        dit = AceStepHandler()
-        dit.initialize_service(
-            project_root=str(_REPO_ROOT),
-            config_path=self._dit_config,
-            device=self._device,
-        )
+        t0 = time.perf_counter()
+        try:
+            dit = AceStepHandler()
+            dit_status, dit_ok = dit.initialize_service(
+                project_root=str(_REPO_ROOT),
+                config_path=self._dit_config,
+                device=self._device,
+            )
+        except Exception as exc:
+            dit = None
+            dit_status, dit_ok = f"{type(exc).__name__}: {exc}", False
+        dit_s = time.perf_counter() - t0
+        if not dit_ok:
+            dit = None  # never keep a half-built handler around
+            _log(
+                f"pipeline load FAILED after {dit_s:.1f} s ({self._dit_config} on {self._device}): {dit_status}"
+            )
+            raise RuntimeError(f"ACE-Step model initialisation failed: {dit_status}")
 
-        llm = LLMHandler()
-        llm.initialize(
-            checkpoint_dir=str(_CHECKPOINTS_DIR),
-            lm_model_path=self._lm_model,
-            backend="vllm",  # fork auto-routes to mlx on mps + mlx-lm installed
-            device=self._device,
-        )
+        t1 = time.perf_counter()
+        llm = None
+        try:
+            candidate = LLMHandler()
+            lm_status, lm_ok = candidate.initialize(
+                checkpoint_dir=str(_CHECKPOINTS_DIR),
+                lm_model_path=self._lm_model,
+                backend="vllm",  # fork auto-routes to mlx on mps + mlx-lm installed
+                device=self._device,
+            )
+            if lm_ok:
+                llm = candidate
+        except Exception as exc:
+            lm_status = f"{type(exc).__name__}: {exc}"
+        lm_s = time.perf_counter() - t1
+        if llm is None:
+            _log(
+                f"WARNING: 5Hz LM {self._lm_model!r} did not load (checkpoint dir {_CHECKPOINTS_DIR}); "
+                f"generating WITHOUT the LM, so thinking / CoT settings have no effect. "
+                f"Reason: {lm_status}"
+            )
 
         self._dit = dit
         self._llm = llm
+        _log(
+            f"pipeline load: DiT/VAE/text encoder {dit_s:.1f} s, 5Hz LM {lm_s:.1f} s, "
+            f"LM active: {'yes' if llm is not None else 'no'} "
+            f"(dit={self._dit_config}, lm={self._lm_model}, device={self._device})"
+        )
 
     def generate(self, params: dict) -> str:
         """Run a single song generation across all four modes.
