@@ -2,6 +2,7 @@
   {
     "name": "Chinese Rap",
     "hf_id": "ACE-Step/ACE-Step-v1-chinese-rap-LoRA",
+    "revision": "e40a223cb69a60ba8a8c46752987c152b8a5f828",
     "filename": "pytorch_lora_weights.safetensors",
     "kind": "genre",
     "default_scale": 0.85
@@ -9,6 +10,7 @@
   {
     "name": "Chinese New Year",
     "hf_id": "ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA",
+    "revision": "cb829a12775740c830a6d49795f16913065dc492",
     "filename": "adapter_model.safetensors",
     "kind": "genre",
     "default_scale": 0.85
