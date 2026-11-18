@@ -21,11 +21,13 @@ boundary so the real Qwen weights are never loaded in CI.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
 
 import ace_pipeline as ap
+import model_store
 
 _DEFAULT_MAC_ID = "mlx-community/Qwen2.5-7B-Instruct-4bit"
 _DEFAULT_CUDA_ID = "Qwen/Qwen2.5-7B-Instruct"
@@ -100,14 +102,33 @@ def _get_lm():
     return _LM
 
 
+def _hf_source() -> tuple[str, dict[str, Any]]:
+    """Where transformers loads Qwen from: ``(path or repo id, extra from_pretrained kwargs)``.
+
+    On Spaces this runs inside the GPU worker, where a Hub call costs GPU time:
+    use the complete local snapshot the model store resolved at startup, or,
+    if there is none, the repo id pinned to the manifest's commit. Off Spaces
+    it is the plain repo id, as before.
+    """
+    if not os.getenv("SPACE_ID"):
+        return _DEFAULT_CUDA_ID, {}
+    local = model_store.local_snapshot(_DEFAULT_CUDA_ID)
+    if local is not None:
+        return str(local), {}
+    entry = model_store.get_repo(model_store.load_manifest(), repo_id=_DEFAULT_CUDA_ID)
+    _log.warning("no complete local snapshot of %s; loading it from the Hub", _DEFAULT_CUDA_ID)
+    return _DEFAULT_CUDA_ID, {"revision": entry["revision"]}
+
+
 def _load_hflm(device: str) -> _HFLM:
     """Load Qwen 2.5 7B via transformers on the given device (mps/cuda/cpu)."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     dtype = torch.bfloat16 if device in ("cuda", "mps") else torch.float32
-    tok = AutoTokenizer.from_pretrained(_DEFAULT_CUDA_ID)
-    model = AutoModelForCausalLM.from_pretrained(_DEFAULT_CUDA_ID, torch_dtype=dtype).to(device)
+    source, extra = _hf_source()
+    tok = AutoTokenizer.from_pretrained(source, **extra)
+    model = AutoModelForCausalLM.from_pretrained(source, torch_dtype=dtype, **extra).to(device)
     return _HFLM(model=model, tokenizer=tok)
 
 
