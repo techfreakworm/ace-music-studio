@@ -50,7 +50,7 @@ def test_manifest_schema_and_fields():
     assert len(repo_ids) == len(set(repo_ids)), "duplicate repo ids"
     for r in m["repos"]:
         assert re.fullmatch(r"[0-9a-f]{40}", r["revision"]), r
-        assert r["startup"] in {"required", "optional", "lazy"}, r
+        assert r["startup"] in {"required", "optional"}, r
         assert r["files"], r
         paths = [f["path"] for f in r["files"]]
         assert len(paths) == len(set(paths)), f"duplicate paths in {r['repo_id']}"
@@ -66,9 +66,8 @@ def test_manifest_pins_the_expected_repos_and_commits():
         UMBRELLA: ("19671f406d603126926c1b7e2adc169acbcade22", "required"),
         XL_SFT: ("d06de46b4622f781cf07f4a013a67d591ca52819", "required"),
         QWEN: ("a09a35458c702b33eeacc393d103063234e8bc28", "optional"),
-        "ACE-Step/ACE-Step-v1-chinese-rap-LoRA": ("e40a223cb69a60ba8a8c46752987c152b8a5f828", "lazy"),
-        "ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA": ("cb829a12775740c830a6d49795f16913065dc492", "lazy"),
     }
+    # LoRA presets are fetched on click by hf_hub_download (presets/manifest.json), not at startup.
     assert set(repos) == set(expected)
     for repo_id, (revision, startup) in expected.items():
         assert repos[repo_id]["revision"] == revision, repo_id

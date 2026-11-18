@@ -150,12 +150,15 @@ def _front_matter() -> tuple[list[str], dict]:
     return raw.splitlines(), yaml.safe_load(raw)
 
 
-def test_readme_preload_from_hub_matches_the_manifest():
+def test_readme_preload_from_hub_matches_the_manifest_and_presets():
+    import lora_stack
+
     _, meta = _front_matter()
     manifest = model_store.load_manifest()
     expected = [
         f"{r['repo_id']} {','.join(f['path'] for f in r['files'])} {r['revision']}" for r in manifest["repos"]
     ]
+    expected += [f"{p['hf_id']} {p['filename']} {p['revision']}" for p in lora_stack.load_presets()]
     assert meta["preload_from_hub"] == expected
 
 

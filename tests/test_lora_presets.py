@@ -61,19 +61,25 @@ def _no_network(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", _refuse)
 
 
-def test_presets_pin_the_model_manifest_commits():
-    import re
-
-    manifest = model_store.load_manifest()
-    for p in ls.load_presets():
-        assert re.fullmatch(r"[0-9a-f]{40}", p["revision"]), p
-        entry = model_store.get_repo(manifest, repo_id=p["hf_id"])
-        assert p["revision"] == entry["revision"], p["name"]
-        assert entry["startup"] == "lazy", p["name"]
-        assert p["filename"] in [f["path"] for f in entry["files"]], p["name"]
+PRESET_REVISIONS = {
+    "ACE-Step/ACE-Step-v1-chinese-rap-LoRA": "e40a223cb69a60ba8a8c46752987c152b8a5f828",
+    "ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA": "cb829a12775740c830a6d49795f16913065dc492",
+}
 
 
-def test_download_preset_off_spaces_passes_pinned_revision(monkeypatch, tmp_path):
+def test_presets_pin_their_commits():
+    presets = ls.load_presets()
+    assert {p["hf_id"]: p["revision"] for p in presets} == PRESET_REVISIONS
+
+
+def test_presets_are_not_in_the_startup_manifest():
+    # Presets are fetched on click; the startup bootstrap never downloads them.
+    repo_ids = {r["repo_id"] for r in model_store.load_manifest()["repos"]}
+    assert not repo_ids & set(PRESET_REVISIONS)
+
+
+@pytest.mark.parametrize("space_id", [None, "test/test"])
+def test_download_preset_passes_the_pinned_revision(monkeypatch, tmp_path, space_id):
     import huggingface_hub
 
     calls = []
@@ -82,54 +88,20 @@ def test_download_preset_off_spaces_passes_pinned_revision(monkeypatch, tmp_path
         calls.append(kwargs)
         return str(tmp_path / kwargs["filename"])
 
-    monkeypatch.delenv("SPACE_ID", raising=False)
+    if space_id is None:
+        monkeypatch.delenv("SPACE_ID", raising=False)
+    else:
+        monkeypatch.setenv("SPACE_ID", space_id)
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", _hf_hub_download)
     monkeypatch.setattr(model_store, "ensure_repo", MagicMock(side_effect=AssertionError("store used")))
-    preset = ls.load_presets()[0]
 
-    path = ls.download_preset(preset["name"])
-
-    assert path == tmp_path / preset["filename"]
-    assert calls == [
-        {"repo_id": preset["hf_id"], "filename": preset["filename"], "revision": preset["revision"]}
-    ]
-
-
-def test_download_preset_on_spaces_goes_through_the_model_store(monkeypatch, tmp_path):
-    import huggingface_hub
-
-    roots = [tmp_path / "a", tmp_path / "b", tmp_path / "c"]
-    ensured = []
-
-    def _ensure_repo(entry, roots_arg, **kwargs):
-        ensured.append((entry, list(roots_arg)))
-        return tmp_path / "snap"
-
-    monkeypatch.setenv("SPACE_ID", "test/test")
-    monkeypatch.setattr(model_store, "default_roots", lambda: roots)
-    monkeypatch.setattr(model_store, "ensure_repo", _ensure_repo)
-    monkeypatch.setattr(huggingface_hub, "hf_hub_download", MagicMock(side_effect=AssertionError("hub used")))
-    preset = next(p for p in ls.load_presets() if p["name"] == "Chinese New Year")
-
-    path = ls.download_preset(preset["name"])
-
-    assert path == tmp_path / "snap" / preset["filename"]
-    assert len(ensured) == 1
-    entry, used_roots = ensured[0]
-    assert entry == model_store.get_repo(model_store.load_manifest(), repo_id=preset["hf_id"])
-    assert used_roots == roots
-
-
-def test_download_preset_on_spaces_reports_store_failure(monkeypatch):
-    import huggingface_hub
-
-    monkeypatch.setenv("SPACE_ID", "test/test")
-    monkeypatch.setattr(huggingface_hub, "hf_hub_download", MagicMock(side_effect=AssertionError("hub used")))
-    monkeypatch.setattr(
-        model_store, "ensure_repo", MagicMock(side_effect=model_store.ModelStoreError("no root worked"))
-    )
-    with pytest.raises(ls.LoRAValidationError, match="no root worked"):
-        ls.download_preset(ls.load_presets()[0]["name"])
+    for preset in ls.load_presets():
+        calls.clear()
+        path = ls.download_preset(preset["name"])
+        assert path == tmp_path / preset["filename"]
+        assert calls == [
+            {"repo_id": preset["hf_id"], "filename": preset["filename"], "revision": preset["revision"]}
+        ]
 
 
 def test_download_preset_unknown_name():

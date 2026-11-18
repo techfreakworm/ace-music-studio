@@ -21,12 +21,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-
-import model_store
 
 _log = logging.getLogger("ams.lora")
 
@@ -147,10 +144,6 @@ def load_presets() -> list[dict]:
 def download_preset(name: str) -> Path:
     """Download a preset LoRA from HF, pinned to its ``revision``, if not already cached.
 
-    On Spaces the file comes through ``model_store`` (pinned snapshot found
-    on disk, or downloaded with its fallbacks for unwritable caches and
-    hf_xet errors); elsewhere through ``hf_hub_download``.
-
     Returns the local path on success. Raises LoRAValidationError if the
     preset name is unknown OR the HF download fails (network, 404, etc.).
     """
@@ -159,8 +152,6 @@ def download_preset(name: str) -> Path:
 
     for p in load_presets():
         if p["name"] == name:
-            if os.getenv("SPACE_ID"):
-                return _download_preset_via_store(p)
             try:
                 local = hf_hub_download(repo_id=p["hf_id"], filename=p["filename"], revision=p["revision"])
                 return Path(local)
@@ -169,17 +160,6 @@ def download_preset(name: str) -> Path:
                     f"Could not download preset {name!r} from {p['hf_id']!r}: {e}"
                 ) from e
     raise LoRAValidationError(f"Unknown preset: {name}")
-
-
-def _download_preset_via_store(preset: dict) -> Path:
-    try:
-        entry = model_store.get_repo(model_store.load_manifest(), repo_id=preset["hf_id"])
-        snapshot = model_store.ensure_repo(entry, model_store.default_roots())
-    except (KeyError, model_store.ModelStoreError) as e:
-        raise LoRAValidationError(
-            f"Could not download preset {preset['name']!r} from {preset['hf_id']!r}: {e}"
-        ) from e
-    return snapshot / preset["filename"]
 
 
 def apply_stack(pipe, stack: list[dict]) -> None:
