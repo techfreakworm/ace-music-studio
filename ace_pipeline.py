@@ -89,6 +89,43 @@ def vram_limit_for(device: str) -> int | None:
         return None
 
 
+def _audio_duration_s(path: str | None) -> float:
+    """Length in seconds of an uploaded audio file, read from the file itself.
+
+    soundfile (libsndfile) reads the header of wav, flac, ogg and mp3 without
+    decoding. Anything it cannot open falls back to ``torchaudio.load``, the
+    loader the fork itself uses for ``src_audio``. Raises ``ValueError`` (shown
+    to the user by the app) when neither can read a non-empty clip.
+    """
+    if not path:
+        raise ValueError("No source audio was provided.")
+    name = Path(str(path)).name
+    reasons = []
+    try:
+        import soundfile as sf
+
+        info = sf.info(str(path))
+        if info.samplerate > 0 and info.frames > 0:
+            return info.frames / float(info.samplerate)
+        reasons.append("soundfile: no audio frames")
+    except Exception as exc:
+        reasons.append(f"soundfile: {type(exc).__name__}: {exc}")
+    try:
+        import torchaudio
+
+        wav, sr = torchaudio.load(str(path))
+        if sr > 0 and wav.shape[-1] > 0:
+            return wav.shape[-1] / float(sr)
+        reasons.append("torchaudio: no audio frames")
+    except Exception as exc:
+        reasons.append(f"torchaudio: {type(exc).__name__}: {exc}")
+    _log(f"could not read the length of {path}: {'; '.join(reasons)}")
+    raise ValueError(
+        f"Could not read the uploaded audio file '{name}' (unsupported, damaged or empty). "
+        "Upload a WAV, FLAC or MP3 file."
+    )
+
+
 class ACEStepStudio:
     """Wrapper around the apple-silicon fork's split-handler API.
 
@@ -194,11 +231,16 @@ class ACEStepStudio:
         - ``cover``:    ``task_type="cover"`` + ``reference_audio`` +
           ``audio_cover_strength``
         - ``extend``:   ``task_type="repaint"`` + ``src_audio`` set to the
-          seed, with ``repainting_start=-1`` / ``repainting_end=-1`` as a
-          sentinel meaning "paint after the end of the seed". The actual
-          mask shaping ultimately lives inside ACE-Step's repaint path.
+          seed and the repaint window ``[seed_len, seed_len + extra_duration_s]``.
+          The fork right-pads ``src_audio`` up to ``repainting_end``
+          (outpainting), so the output is the seed followed by the new part.
         - ``edit``:     ``task_type="repaint"`` + ``src_audio`` + explicit
           ``[segment_start_s, segment_end_s]`` segment bounds.
+
+        Extend and Edit (repaint) run with the fork's repaint instruction and
+        ``audio_cover_strength=1.0`` (the fork default): below 1.0 the XL DiT
+        switches to a condition built from silence and the source audio is
+        dropped.
 
         Flow-edit (``sub_mode="flow_edit"``) is implemented as a repaint
         pass: the installed ACE-Step ``GenerationParams`` dataclass has no
@@ -208,6 +250,11 @@ class ACEStepStudio:
 
         Returns the path to the produced audio file.
         """
+        mode = params.get("mode", "generate")
+        # Read the seed's length before the (slow) model load, so an
+        # unreadable upload fails fast with a ValueError.
+        seed_len_s = _audio_duration_s(params.get("seed_audio")) if mode == "extend" else None
+
         self._ensure_loaded()
 
         from acestep.inference import (
@@ -218,7 +265,6 @@ class ACEStepStudio:
 
         advanced = params.get("advanced", {}) or {}
         lm_opts = params.get("lm", {}) or {}
-        mode = params.get("mode", "generate")
 
         # Map our internal dict to ACE-Step's GenerationParams.
         # Lyrics "[Instrumental]" is the ACE-Step convention for instrumental.
@@ -237,6 +283,8 @@ class ACEStepStudio:
         audio_cover_strength = 0.0
         repainting_start = 0.0
         repainting_end = -1.0
+        # Only the repaint modes set it; the others keep the fork's default.
+        instruction: str | None = None
 
         if mode == "generate":
             task_type = "text2music"
@@ -245,14 +293,20 @@ class ACEStepStudio:
             ref_audio = params.get("ref_audio")
             audio_cover_strength = float(params.get("audio_cover_strength", 0.93))
         elif mode == "extend":
+            from acestep.constants import TASK_INSTRUCTIONS
+
             task_type = "repaint"
             src_audio = params.get("seed_audio")
-            # Sentinel: -1 / -1 means "append after the seed audio's end".
-            # ACE-Step's repaint path interprets these bounds against the
-            # src_audio duration; the actual semantics need verifying once
-            # we run a full pass on real hardware (M3 GPU smoke).
-            repainting_start = -1.0
-            repainting_end = -1.0
+            extra_s = float(params.get("extra_duration_s") or 0)
+            if extra_s <= 0:
+                raise ValueError("Extend needs an extra duration greater than 0 seconds.")
+            # Outpaint after the seed: keep [0, seed_len] and paint
+            # [seed_len, seed_len + extra]. The fork pads src_audio on the
+            # right up to repainting_end (handler.py prepare_padding_info).
+            repainting_start = seed_len_s
+            repainting_end = seed_len_s + extra_s
+            audio_cover_strength = 1.0
+            instruction = TASK_INSTRUCTIONS["repaint"]
         elif mode == "edit":
             task_type = "repaint"
             src_audio = params.get("source_audio")
@@ -265,6 +319,11 @@ class ACEStepStudio:
             # support in the installed dataclass).
             if params.get("sub_mode") == "flow_edit":
                 audio_cover_strength = 0.3
+            else:
+                from acestep.constants import TASK_INSTRUCTIONS
+
+                audio_cover_strength = 1.0
+                instruction = TASK_INSTRUCTIONS["repaint"]
         else:
             raise ValueError(f"Unknown mode: {mode!r}")
 
@@ -289,6 +348,7 @@ class ACEStepStudio:
         #   the "no matter what prompt the style barely changes" symptom).
         # - ``use_cot_metas`` / ``use_cot_caption`` / ``use_cot_language``
         #   keys renamed from ``cot_*`` for consistency with the dataclass.
+        task_kwargs = {"instruction": instruction} if instruction is not None else {}
         gen_params = GenerationParams(
             task_type=task_type,
             caption=caption,
@@ -325,6 +385,7 @@ class ACEStepStudio:
             use_cot_metas=bool(lm_opts.get("use_cot_metas", True)),
             use_cot_caption=bool(lm_opts.get("use_cot_caption", True)),
             use_cot_language=bool(lm_opts.get("use_cot_language", True)),
+            **task_kwargs,
         )
 
         gen_config = GenerationConfig(
