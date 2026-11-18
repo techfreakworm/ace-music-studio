@@ -126,13 +126,32 @@ def _audio_duration_s(path: str | None) -> float:
     )
 
 
+# Task types the fork runs without the 5Hz LM (inference.py ``skip_lm_tasks``).
+_LM_SKIP_TASKS = frozenset({"cover", "repaint"})
+
+
+def _fork_uses_lm(
+    task_type: str, thinking: bool, use_cot_caption: bool, use_cot_language: bool, use_cot_metas: bool
+) -> bool:
+    """Whether ``generate_music`` would run the 5Hz LM for these params.
+
+    Mirrors the fork's own decision (inference.py:372-381) minus its check
+    that the handler is loaded: the LM is used for every task type except
+    cover and repaint, when thinking or any CoT flag is on.
+    """
+    need_lm_for_cot = use_cot_caption or use_cot_language or use_cot_metas
+    return bool((thinking or need_lm_for_cot) and task_type not in _LM_SKIP_TASKS)
+
+
 class ACEStepStudio:
     """Wrapper around the apple-silicon fork's split-handler API.
 
     Owns one ``AceStepHandler`` (DiT) and one ``LLMHandler`` (5Hz LM
-    planner). Both are lazy-loaded on the first ``generate(...)`` call.
-    The DiT is required; the LM is optional and stays ``None`` when it
-    fails to load (``generate_music`` then runs the DiT alone).
+    planner). The DiT is lazy-loaded on the first ``generate(...)`` call.
+    The LM is optional: it is loaded on the first call the fork would use
+    it for (text2music with thinking or CoT on), once per process, and
+    stays ``None`` when it fails to load (``generate_music`` then runs the
+    DiT alone). Calls that do not use it pass ``None`` and never load it.
     """
 
     def __init__(
@@ -143,6 +162,7 @@ class ACEStepStudio:
     ) -> None:
         self._dit = None
         self._llm = None
+        self._lm_tried = False  # one LM load attempt per process
         self._dit_config = dit_config or os.environ.get("ACE_DIT_CONFIG", _DEFAULT_DIT_CONFIG)
         self._lm_model = lm_model or os.environ.get("ACE_LM_MODEL", _DEFAULT_LM_MODEL)
         self._device = device or detect_device()
@@ -157,18 +177,18 @@ class ACEStepStudio:
         return self._dit is not None
 
     def _ensure_loaded(self) -> None:
-        """First-call lazy load of both handlers. Heavy imports stay local.
+        """First-call lazy load of the DiT, VAE and text encoder.
 
-        Both fork initialisers report failure by returning ``(status, False)``
-        rather than raising. A DiT failure raises ``RuntimeError`` with the
-        fork's status text and caches nothing, so the next call retries. An
-        LM failure is logged and generation continues without the LM.
+        The fork's initialiser reports failure by returning
+        ``(status, False)`` rather than raising. A failure raises
+        ``RuntimeError`` with the fork's status text and caches nothing, so
+        the next call retries. The 5Hz LM is not loaded here; see
+        ``_ensure_lm_loaded``. Heavy imports stay local.
         """
         if self.is_loaded:
             return
 
         from acestep.handler import AceStepHandler
-        from acestep.llm_inference import LLMHandler
 
         t0 = time.perf_counter()
         try:
@@ -189,9 +209,29 @@ class ACEStepStudio:
             )
             raise RuntimeError(f"ACE-Step model initialisation failed: {dit_status}")
 
+        self._dit = dit
+        _log(
+            f"pipeline load: DiT/VAE/text encoder {dit_s:.1f} s "
+            f"(dit={self._dit_config}, device={self._device})"
+        )
+
+    def _ensure_lm_loaded(self) -> None:
+        """Load the 5Hz LM on the first call that uses it; one attempt per process.
+
+        ``LLMHandler.initialize`` reports failure by returning
+        ``(status, False)``. A failure (or exception) is logged loudly and
+        not retried; ``self._llm`` stays ``None`` and generation runs the
+        DiT alone. Nothing here touches the DiT.
+        """
+        if self._llm is not None or self._lm_tried:
+            return
+        self._lm_tried = True
+
         t1 = time.perf_counter()
         llm = None
         try:
+            from acestep.llm_inference import LLMHandler
+
             candidate = LLMHandler()
             lm_status, lm_ok = candidate.initialize(
                 checkpoint_dir=str(_CHECKPOINTS_DIR),
@@ -211,12 +251,10 @@ class ACEStepStudio:
                 f"Reason: {lm_status}"
             )
 
-        self._dit = dit
         self._llm = llm
         _log(
-            f"pipeline load: DiT/VAE/text encoder {dit_s:.1f} s, 5Hz LM {lm_s:.1f} s, "
-            f"LM active: {'yes' if llm is not None else 'no'} "
-            f"(dit={self._dit_config}, lm={self._lm_model}, device={self._device})"
+            f"5Hz LM load: {lm_s:.1f} s, LM active: {'yes' if llm is not None else 'no'} "
+            f"(lm={self._lm_model}, device={self._device})"
         )
 
     def generate(self, params: dict) -> str:
@@ -349,6 +387,10 @@ class ACEStepStudio:
         # - ``use_cot_metas`` / ``use_cot_caption`` / ``use_cot_language``
         #   keys renamed from ``cot_*`` for consistency with the dataclass.
         task_kwargs = {"instruction": instruction} if instruction is not None else {}
+        thinking = bool(lm_opts.get("thinking", True))
+        use_cot_metas = bool(lm_opts.get("use_cot_metas", True))
+        use_cot_caption = bool(lm_opts.get("use_cot_caption", True))
+        use_cot_language = bool(lm_opts.get("use_cot_language", True))
         gen_params = GenerationParams(
             task_type=task_type,
             caption=caption,
@@ -376,15 +418,15 @@ class ACEStepStudio:
             # 5Hz language model knobs — defaults flipped to True so the
             # LM actually reasons about each prompt instead of returning
             # blank captions / metadata back to the DiT.
-            thinking=bool(lm_opts.get("thinking", True)),
+            thinking=thinking,
             lm_temperature=float(lm_opts.get("temperature", 0.85)),
             lm_cfg_scale=float(lm_opts.get("cfg", 2.0)),
             lm_top_k=int(lm_opts.get("top_k", 0)),
             lm_top_p=float(lm_opts.get("top_p", 0.9)),
             lm_negative_prompt=lm_opts.get("negative_prompt", "NO USER INPUT"),
-            use_cot_metas=bool(lm_opts.get("use_cot_metas", True)),
-            use_cot_caption=bool(lm_opts.get("use_cot_caption", True)),
-            use_cot_language=bool(lm_opts.get("use_cot_language", True)),
+            use_cot_metas=use_cot_metas,
+            use_cot_caption=use_cot_caption,
+            use_cot_language=use_cot_language,
             **task_kwargs,
         )
 
@@ -400,9 +442,16 @@ class ACEStepStudio:
         # Pass an explicit output dir so the path is always usable.
         _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+        # Load the 5Hz LM only for calls the fork will use it for; the others
+        # (cover, repaint, or no thinking/CoT) get None and never pay its load.
+        llm = None
+        if _fork_uses_lm(task_type, thinking, use_cot_caption, use_cot_language, use_cot_metas):
+            self._ensure_lm_loaded()
+            llm = self._llm
+
         result = generate_music(
             self._dit,
-            self._llm,
+            llm,
             gen_params,
             gen_config,
             save_dir=str(_OUTPUT_DIR),
