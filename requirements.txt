@@ -1,15 +1,20 @@
 # gradio is injected by HF Spaces per README sdk_version (6.14.0).
 # transformers — pinned narrower to match ace-step's range (4.51.0–4.57.x).
 transformers>=4.51.0,<4.58.0
-torch>=2.4
-torchaudio>=2.4
+# ZeroGPU supports torch up to 2.13.0; torchaudio 2.11.0 and torchcodec >= 0.12 need >= 2.11.
+torch>=2.11,<2.14
+# 2.11.1's binary needs torch >= 2.13 although its metadata says >= 2.11.
+torchaudio==2.11.0
 safetensors>=0.4
-peft>=0.13
-demucs>=4.0
+# Upper bound at the minor verified in the local gate (LoRA loading in the fork).
+peft>=0.13,<0.22
+# Upper bound at the minor verified in the local gate (4.1 keeps get_model/apply_model).
+demucs>=4.0,<4.2
 pyloudnorm>=0.1.1
 soundfile>=0.13.1
 librosa>=0.10
-huggingface_hub>=0.25
+# transformers 4.57 needs >=0.34,<1.0; model_store relies on the 0.x snapshot_download API.
+huggingface_hub>=0.34,<1.0
 hf_transfer>=0.1.9
 numpy>=1.26,<2
 # --- ace-step's transitive deps (NOT installing ace-step itself; it's
@@ -17,19 +22,25 @@ numpy>=1.26,<2
 # pyproject pins nano-vllm; sys_platform != "darwin" which isn't on PyPI,
 # so we list ace-step's deps directly and bypass the pip install of the
 # package. app.py adds vendor/ace-step to sys.path before importing. ---
-diffusers
+# Upper bound at the minor verified in the local gate (0.40+ also needs huggingface_hub >= 1.23).
+diffusers<0.40
 matplotlib>=3.7.5
 scipy>=1.10.1
 loguru>=0.7.3
 einops>=0.8.1
-accelerate>=1.12.0
+# Upper bound at the minor verified in the local gate (loaded by transformers and diffusers).
+accelerate>=1.12.0,<1.17
 fastapi>=0.110.0
 diskcache
 uvicorn[standard]>=0.27.0
-numba>=0.63.1
-vector-quantize-pytorch>=1.27.15
-torchcodec>=0.9.1
-torchao
+# Upper bound at the minor verified in the local gate (loaded with the ACE-Step handler).
+numba>=0.63.1,<0.69
+# Imported by the XL SFT model code at load and fast-moving: capped at the verified minor.
+vector-quantize-pytorch>=1.27.15,<1.35
+# Declares no torch requirement, so pip can't keep it in step with torch: capped at the verified minor.
+torchcodec>=0.12,<0.18
+# transformers and diffusers import its prototype API at load time: capped at the verified minor.
+torchao>=0.16,<0.19
 toml
 lightning>=2.0.0
 modelscope

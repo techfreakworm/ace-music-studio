@@ -170,3 +170,51 @@ def test_readme_rest_of_front_matter_is_unchanged():
     others = [ln for ln in lines if not ln.startswith(("python_version:", "- "))]
     assert others == _UNCHANGED_FRONT_MATTER
     assert len(meta["short_description"]) <= 60  # HF rejects pushes otherwise
+
+
+# --- requirements.txt (resolved by HF Spaces on every rebuild) --------------------
+
+_PINNED = [
+    "torch>=2.11,<2.14",
+    "torchaudio==2.11.0",
+    "torchcodec>=0.12,<0.18",
+    "torchao>=0.16,<0.19",
+    "diffusers<0.40",
+    "peft>=0.13,<0.22",
+    "accelerate>=1.12.0,<1.17",
+    "demucs>=4.0,<4.2",
+    "vector-quantize-pytorch>=1.27.15,<1.35",
+    "numba>=0.63.1,<0.69",
+    "huggingface_hub>=0.34,<1.0",
+]
+
+
+def _requirement_lines() -> list[str]:
+    return (REPO_ROOT / "requirements.txt").read_text().splitlines()
+
+
+def _requirement_names() -> dict[str, str]:
+    import re
+
+    out = {}
+    for line in _requirement_lines():
+        spec = line.split("#", 1)[0].strip()
+        if spec:
+            out[re.split(r"[<>=!~;\[ ]", spec, maxsplit=1)[0].lower().replace("_", "-")] = spec
+    return out
+
+
+def test_requirements_pin_the_torch_stack_and_model_load_path():
+    lines = _requirement_lines()
+    for spec in _PINNED:
+        assert spec in lines, spec
+        above = lines[lines.index(spec) - 1]
+        assert above.startswith("# "), f"{spec} needs a one-line comment saying why"
+    names = _requirement_names()
+    assert names["torchaudio"] == "torchaudio==2.11.0"  # 2.11.1's binary needs torch >= 2.13
+
+
+def test_requirements_leave_gradio_and_spaces_to_the_platform():
+    names = _requirement_names()
+    assert "gradio" not in names  # injected by HF from README sdk_version
+    assert names["spaces"] == 'spaces; sys_platform == "linux"'  # no version: ZeroGPU injects its own
