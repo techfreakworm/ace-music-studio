@@ -6,15 +6,17 @@ torch>=2.11,<2.14
 # 2.11.1's binary needs torch >= 2.13 although its metadata says >= 2.11.
 torchaudio==2.11.0
 safetensors>=0.4
-# Upper bound at the minor verified in the local gate (LoRA loading in the fork).
-peft>=0.13,<0.22
-# Upper bound at the minor verified in the local gate (4.1 keeps get_model/apply_model).
-demucs>=4.0,<4.2
+# Exact version the gate ran (LoRA loading in the fork).
+peft==0.21.3
+# 4.1 fetches htdemucs from an unpinned third-party HF repo first; 4.0.1 uses the fixed, hash-checked file.
+demucs==4.0.1
 pyloudnorm>=0.1.1
 soundfile>=0.13.1
 librosa>=0.10
-# transformers 4.57 needs >=0.34,<1.0; model_store relies on the 0.x snapshot_download API.
-huggingface_hub>=0.34,<1.0
+# transformers 4.57 needs <1.0, and model_store relies on 0.36's snapshot_download: the gate's version.
+huggingface_hub==0.36.2
+# hub 0.36.2 calls only hf_xet's legacy download API (deprecated in 1.8): exact version the gate ran.
+hf_xet==1.8.0
 hf_transfer>=0.1.9
 numpy>=1.26,<2
 # --- ace-step's transitive deps (NOT installing ace-step itself; it's
@@ -22,25 +24,27 @@ numpy>=1.26,<2
 # pyproject pins nano-vllm; sys_platform != "darwin" which isn't on PyPI,
 # so we list ace-step's deps directly and bypass the pip install of the
 # package. app.py adds vendor/ace-step to sys.path before importing. ---
-# Upper bound at the minor verified in the local gate (0.40+ also needs huggingface_hub >= 1.23).
-diffusers<0.40
+# Exact version the gate ran (AutoencoderOobleck; 0.40+ also needs huggingface_hub >= 1.23).
+diffusers==0.39.0
 matplotlib>=3.7.5
 scipy>=1.10.1
 loguru>=0.7.3
 einops>=0.8.1
-# Upper bound at the minor verified in the local gate (loaded by transformers and diffusers).
-accelerate>=1.12.0,<1.17
+# Exact version the gate ran (loaded by transformers and diffusers).
+accelerate==1.15.0
 fastapi>=0.110.0
 diskcache
 uvicorn[standard]>=0.27.0
-# Upper bound at the minor verified in the local gate (loaded with the ACE-Step handler).
-numba>=0.63.1,<0.69
-# Imported by the XL SFT model code at load and fast-moving: capped at the verified minor.
-vector-quantize-pytorch>=1.27.15,<1.35
-# Declares no torch requirement, so pip can't keep it in step with torch: capped at the verified minor.
-torchcodec>=0.12,<0.18
-# transformers and diffusers import its prototype API at load time: capped at the verified minor.
-torchao>=0.16,<0.19
+# Exact version the gate ran (loaded with the ACE-Step handler).
+numba==0.68.1
+# Imported by the XL SFT model code at load and fast-moving: exact version the gate ran.
+vector-quantize-pytorch==1.34.1
+# vector-quantize-pytorch 1.34.1 imports it without an upper bound (29 releases since September).
+torch-einops-utils==0.2.8
+# Declares no torch requirement, so pip can't keep it in step with torch: exact version the gate ran.
+torchcodec==0.17.0
+# transformers and diffusers import its prototype API at load time: exact version the gate ran.
+torchao==0.18.0
 toml
 lightning>=2.0.0
 modelscope

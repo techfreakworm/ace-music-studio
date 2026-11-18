@@ -195,18 +195,22 @@ def test_readme_rest_of_front_matter_is_unchanged():
 
 # --- requirements.txt (resolved by HF Spaces on every rebuild) --------------------
 
+# Exact versions the Python 3.10 gate ran on the model-load path (torch is a range:
+# the platform preinstalls it, and ZeroGPU supports 2.11.0 / 2.12.1 / 2.13.0).
 _PINNED = [
     "torch>=2.11,<2.14",
     "torchaudio==2.11.0",
-    "torchcodec>=0.12,<0.18",
-    "torchao>=0.16,<0.19",
-    "diffusers<0.40",
-    "peft>=0.13,<0.22",
-    "accelerate>=1.12.0,<1.17",
-    "demucs>=4.0,<4.2",
-    "vector-quantize-pytorch>=1.27.15,<1.35",
-    "numba>=0.63.1,<0.69",
-    "huggingface_hub>=0.34,<1.0",
+    "torchcodec==0.17.0",
+    "torchao==0.18.0",
+    "diffusers==0.39.0",
+    "peft==0.21.3",
+    "accelerate==1.15.0",
+    "demucs==4.0.1",
+    "vector-quantize-pytorch==1.34.1",
+    "torch-einops-utils==0.2.8",
+    "numba==0.68.1",
+    "huggingface_hub==0.36.2",
+    "hf_xet==1.8.0",
 ]
 
 
@@ -233,6 +237,15 @@ def test_requirements_pin_the_torch_stack_and_model_load_path():
         assert above.startswith("# "), f"{spec} needs a one-line comment saying why"
     names = _requirement_names()
     assert names["torchaudio"] == "torchaudio==2.11.0"  # 2.11.1's binary needs torch >= 2.13
+    assert names["demucs"] == "demucs==4.0.1"  # 4.1 fetches weights from an unpinned HF repo first
+    assert names["torch-einops-utils"] == "torch-einops-utils==0.2.8"  # vq 1.34.1 does not bound it
+
+
+def test_requirement_lines_carry_no_trailing_comments():
+    # Another ZeroGPU Space reported a CONFIG_ERROR blamed on an inline comment on the torch line.
+    for line in _requirement_lines():
+        if line.strip() and not line.lstrip().startswith("#"):
+            assert "#" not in line, line
 
 
 def test_requirements_leave_gradio_and_spaces_to_the_platform():
